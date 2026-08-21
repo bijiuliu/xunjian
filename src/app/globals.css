@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+* { -webkit-tap-highlight-color: transparent; }
+html { background: #f2f2f7; }
+body { margin: 0; }
+
+/* 手机端泵号下拉：保留原生选择的可靠性，但改为 App 风格的触发器。 */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #ffffff !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%230a84ff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
+  background-position: right 14px center !important;
+  background-repeat: no-repeat !important;
+  border: 1px solid #dbeafe;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), inset 0 0 0 1px rgba(255,255,255,.85);
+  padding-right: 44px !important;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+select:focus {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 4px rgba(59, 130, 246, .14);
+}
+
+/* 冲渣区直接展示设备卡片，不显示重复的分组文字。 */
+/* 冲渣泵的四个数值点位横向并列；皮带区域仍维持两列。 */
+main section .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 6px; }
+main section .grid.grid-cols-2 > label { padding: 8px 6px; text-align: center; }
+main section .grid.grid-cols-2 > label span { font-size: 11px; line-height: 1.2; }
+main section .grid.grid-cols-2 > label input { font-size: 17px; text-align: center; }
+main section .mt-3.flex.items-center.border-t { display: none; }
+
+input { color: #000 !important; }
+
+
+
+select option:disabled { color: #a0a6b2; background: #f1f3f6; }
+

@@ -1,6 +1,6 @@
 "use client";
 import { type ChangeEvent, useEffect, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useIsPresent, useReducedMotion } from "framer-motion";
 import { AlertTriangle, Check, ChevronRight, History, Save, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ type SaveValidation = {
   unselectedPumps: string[];
   emptyInputs: string[];
 };
+type DeleteRequest = { ids: string[]; label: string };
 const areas = {
   slag8: {
     title: "8#冲渣区域",
@@ -51,13 +52,16 @@ const items = [
   "中间滚筒",
   "尾轮",
 ];
-const checks = new Set([
-  "皮带情况",
-  "高速 / 低速联轴器",
-  "头轮气管",
-  "尾轮下料口",
-]);
 const DRAFT_STORAGE_KEY = "night-inspection-draft";
+const historyViewVariants = {
+  initial: (direction: 1 | -1) => ({ opacity: 0, x: direction === 1 ? 18 : -18 }),
+  animate: { opacity: 1, x: 0 },
+  exit: (direction: 1 | -1) => ({ opacity: 0, x: direction === 1 ? -14 : 18 }),
+};
+const historyViewTransition = {
+  duration: 0.14,
+  ease: [0.22, 1, 0.36, 1] as const,
+};
 const k = (...x: string[]) => x.join("__");
 const isBeltTab = (value: unknown): value is BeltTab =>
   belts.some(({ id }) => id === value);
@@ -95,51 +99,67 @@ const beltPoints = (id: string, ends: string[], item: string) => {
   }));
 };
 export default function Home() {
+  const reduceMotion = useReducedMotion();
   const [tab, setTab] = useState<Tab>("slag8"),
     [beltTab, setBeltTab] = useState<BeltTab>("SZ101"),
     [values, setValues] = useState<Values>({}),
     [records, setRecords] = useState<InspectionRecord[]>([]),
     [selectedRecord, setSelectedRecord] = useState<InspectionRecord | null>(null),
+    [historyDirection, setHistoryDirection] = useState<1 | -1>(1),
     [manageHistory, setManageHistory] = useState(false),
     [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]),
-    [deleteRequest, setDeleteRequest] = useState<{ ids: string[]; label: string } | null>(null),
+    [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null),
     [saveValidation, setSaveValidation] = useState<SaveValidation | null>(null),
     [draftReady, setDraftReady] = useState(false);
-  useEffect(
-    () =>
-      setRecords(JSON.parse(localStorage.getItem("night-inspection") || "[]") as InspectionRecord[]),
-    [],
-  );
   useEffect(() => {
-    try {
-      const storedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (storedDraft) {
-        const draft = JSON.parse(storedDraft) as unknown;
-        if (draft && typeof draft === "object" && "values" in draft) {
-          const savedDraft = draft as Partial<Draft>;
-          if (savedDraft.values) setValues(savedDraft.values);
-          if (isBeltTab(savedDraft.beltTab)) setBeltTab(savedDraft.beltTab);
-        } else if (draft && typeof draft === "object") {
-          setValues(draft as Values);
+    const loadStorage = window.setTimeout(() => {
+      try {
+        const storedRecords = JSON.parse(
+          localStorage.getItem("night-inspection") || "[]",
+        ) as unknown;
+        if (Array.isArray(storedRecords)) {
+          setRecords(storedRecords as InspectionRecord[]);
         }
+      } catch {
+        setRecords([]);
       }
-    } catch {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-    } finally {
-      setDraftReady(true);
-    }
+
+      try {
+        const storedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+        if (storedDraft) {
+          const draft = JSON.parse(storedDraft) as unknown;
+          if (draft && typeof draft === "object" && "values" in draft) {
+            const savedDraft = draft as Partial<Draft>;
+            if (savedDraft.values) setValues(savedDraft.values);
+            if (isBeltTab(savedDraft.beltTab)) setBeltTab(savedDraft.beltTab);
+          } else if (draft && typeof draft === "object") {
+            setValues(draft as Values);
+          }
+        }
+      } catch {
+        localStorage.removeItem(DRAFT_STORAGE_KEY);
+      } finally {
+        setDraftReady(true);
+      }
+    }, 0);
+
+    return () => window.clearTimeout(loadStorage);
   }, []);
   useEffect(() => {
     if (draftReady) localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ values, beltTab }));
   }, [beltTab, draftReady, values]);
   const put = (n: string, v: string) => setValues((x) => ({ ...x, [n]: v }));
   const status = (n: string) => (
-    <button
+    <Button
+      type="button"
+      size="icon"
+      variant={values[n] === "✕" ? "ghost" : "secondary"}
+      aria-label={values[n] === "✕" ? "标记为正常" : "标记为异常"}
       onClick={() => put(n, values[n] === "✕" ? "✓" : "✕")}
-      className={`grid size-10 place-items-center rounded-xl ${values[n] === "✕" ? "bg-rose-50 text-rose-500" : "bg-blue-50 text-blue-500"}`}
+      className={values[n] === "✕" ? "bg-destructive-soft text-destructive" : undefined}
     >
-      {values[n] === "✕" ? <X /> : <Check />}
-    </button>
+      {values[n] === "✕" ? <X size={19} strokeWidth={2.5} /> : <Check size={19} strokeWidth={2.5} />}
+    </Button>
   );
   const numericInput = (n: string) => ({
     inputMode: "numeric" as const,
@@ -148,17 +168,17 @@ export default function Home() {
     onChange: (e: ChangeEvent<HTMLInputElement>) => put(n, e.target.value),
   });
   const field = (l: string, n: string) => (
-    <label className="rounded-xl bg-slate-50 p-2.5">
-      <span className="block text-[11px] text-slate-500">{l}</span>
+    <label className="rounded-control bg-muted p-2.5 ring-1 ring-transparent transition focus-within:bg-card focus-within:ring-primary/25 focus-within:shadow-card">
+      <span className="block text-label font-medium text-muted-foreground">{l}</span>
       <input
         {...numericInput(n)}
-        className="mt-1 w-full bg-transparent text-xl font-bold outline-none focus:text-blue-500"
+        className="mt-1 w-full bg-transparent text-xl font-bold outline-none"
       />
     </label>
   );
   const beltField = (l: string, n: string) => (
-    <label className="rounded-2xl bg-slate-50 px-3 py-2.5 text-center ring-1 ring-slate-100 transition focus-within:bg-blue-50 focus-within:ring-blue-200">
-      <span className="block text-[11px] font-medium text-slate-500">{l}</span>
+    <label className="rounded-control bg-muted px-3 py-2.5 text-center ring-1 ring-transparent transition focus-within:bg-card focus-within:ring-primary/25 focus-within:shadow-card">
+      <span className="block text-label font-medium text-muted-foreground">{l}</span>
       <input
         {...numericInput(n)}
         className="mt-1 w-full bg-transparent text-center text-lg font-bold outline-none"
@@ -218,7 +238,10 @@ export default function Home() {
     const next = records.filter((record) => !deleting.has(record.id));
     localStorage.setItem("night-inspection", JSON.stringify(next));
     setRecords(next);
-    if (selectedRecord && deleting.has(selectedRecord.id)) setSelectedRecord(null);
+    if (selectedRecord && deleting.has(selectedRecord.id)) {
+      setHistoryDirection(-1);
+      setSelectedRecord(null);
+    }
     setSelectedRecordIds([]);
     setManageHistory(false);
     setDeleteRequest(null);
@@ -237,23 +260,24 @@ export default function Home() {
               <CardContent>
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
-                    <b className="shrink-0">{name}</b>
+                    <b className="shrink-0 text-body text-foreground">{name}</b>
                     <select
                       value={values[k(area, name, String(i), "no")] || ""}
                       onChange={(e) => choosePump(area, name, i, e.target.value)}
-                      className="w-[108px] rounded-xl bg-slate-50 p-3 font-semibold leading-[18px] text-blue-500 outline-none"
+                      className="w-[108px] rounded-control bg-muted p-3 font-semibold leading-[18px] text-primary outline-none"
                     >
                       <option value="">选择</option>
                       {ops.map((o) => <option key={o}>{o}</option>)}
                     </select>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     onClick={() => clearPump(area, name, i)}
-                    className="shrink-0 text-xs text-slate-400"
+                    className="-mr-2 min-w-11 shrink-0 px-2 text-xs font-normal text-subtle-foreground"
                   >
                     清空
-                  </button>
+                  </Button>
                 </div>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   {field("南", k(area, name, String(i), "south"))}
@@ -263,7 +287,7 @@ export default function Home() {
                 </div>
                 <div className="mt-3 flex items-center border-t pt-3">
                   <b className="text-sm">盘根引水槽</b>
-                  <span className="ml-auto mr-2 text-xs text-slate-400">
+                  <span className="ml-auto mr-2 text-caption text-muted-foreground">
                     默认正常
                   </span>
                   {status(k(area, name, String(i), "water"))}
@@ -278,13 +302,14 @@ export default function Home() {
   const belt = (
     <>
       <Head title="皮带区域" caption="两端轴位录数值，滚面与状态项默认正常。" />
-      <div className="sticky top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-10 mb-4 grid h-[42px] grid-cols-3 gap-1 rounded-xl bg-slate-200 p-1">
+      <div className="sticky top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-10 mb-4 grid h-11 grid-cols-3 gap-1 rounded-navigation bg-muted/95 p-1 shadow-card ring-1 ring-inset ring-border/70 backdrop-blur">
         {belts.map((b) => (
           <button
             key={b.id}
             type="button"
             onClick={() => setBeltTab(b.id)}
-            className={`rounded-lg py-2 text-[11px] font-bold transition ${beltTab === b.id ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}
+            aria-pressed={beltTab === b.id}
+            className={`segmented-item relative h-full rounded-navigation-item py-0 text-label font-bold transition duration-200 before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] ${beltTab === b.id ? "bg-card text-primary shadow-card" : "text-muted-foreground"}`}
           >
             {b.id}
           </button>
@@ -305,12 +330,12 @@ export default function Home() {
                   ),
               )
               .map((item) => (
-                <Card className="border-0 shadow-sm ring-1 ring-slate-200/80" key={item}>
+                <Card key={item}>
                   <CardContent className="p-3.5">
                     <div className="flex items-center justify-between">
-                      <b className="text-[15px] text-slate-900">
+                      <b className="text-card-title text-foreground">
                         {item !== "配重" && item.startsWith("配重") && (
-                          <span className="mr-1.5 text-sm">●</span>
+                          <span className="mr-1.5 inline-block size-1.5 rounded-full bg-primary/70 align-middle" aria-hidden="true" />
                         )}
                         {b.id === "SZ101" && item === "电机 / 减速机"
                           ? "电机"
@@ -318,13 +343,14 @@ export default function Home() {
                             ? "液力耦合器"
                             : item}
                       </b>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
                         onClick={() => clearBeltItem(b.id, b.ends, item)}
-                        className="text-xs text-slate-400"
+                        className="-mr-2 min-w-11 px-2 text-xs font-normal text-subtle-foreground"
                       >
                         清空
-                      </button>
+                      </Button>
                     </div>
                     <div
                       className={`mt-2.5 grid gap-2 ${(b.id === "SZ101" && item === "电机 / 减速机") || (b.id === "SZ201-N" && item === "液力耦合器") ? "grid-cols-1" : "grid-cols-[repeat(2,minmax(0,1fr))]"}`}
@@ -369,7 +395,7 @@ export default function Home() {
   const summary = (record: InspectionRecord) => {
     const snapshot = record.values;
     const pumpSummary = (area: "slag8" | "slag9") => {
-      const entries = areas[area].groups.flatMap(([group, pumps]) =>
+      const entries = areas[area].groups.flatMap(([group]) =>
         [0, 1].flatMap((index) => {
           const no = snapshot[k(area, group, String(index), "no")];
           if (!no) return [];
@@ -383,33 +409,33 @@ export default function Home() {
         }),
       );
       return (
-        <Card className="mb-3 border-0 shadow-sm ring-1 ring-slate-200/80">
+        <Card className="mb-3">
           <CardContent className="p-4">
             <b className="text-base">{areas[area].title}</b>
             {entries.length ? (
               <div className="mt-3 space-y-2">
                 {entries.map(({ group, no, index, readings }) => (
-                  <div className="rounded-2xl bg-slate-50 px-3 py-2.5" key={`${group}-${index}`}>
+                  <div className="rounded-control bg-muted px-3 py-2.5" key={`${group}-${index}`}>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="font-semibold text-slate-800">{group} {no}</span>
-                      <span className="text-xs text-slate-400">运行设备</span>
+                      <span className="font-semibold text-foreground">{group} {no}</span>
+                      <span className="text-caption text-muted-foreground">运行设备</span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {readings.length ? (
                         readings.map(([label, field]) => (
-                          <span className="rounded-lg bg-white px-2 py-1 text-xs text-slate-600" key={field}>
-                            {label} <b className="ml-1 text-slate-900">{snapshot[k(area, group, String(index), field)]}</b>
+                          <span className="rounded-small bg-card px-2 py-1 text-caption text-muted-foreground shadow-card" key={field}>
+                            {label} <b className="ml-1 text-foreground">{snapshot[k(area, group, String(index), field)]}</b>
                           </span>
                         ))
                       ) : (
-                        <span className="text-xs text-slate-400">未填写数值</span>
+                        <span className="text-caption text-muted-foreground">未填写数值</span>
                       )}
                     </div>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-slate-400">暂无已填写数据</p>
+              <p className="mt-3 text-body text-muted-foreground">暂无已填写数据</p>
             )}
           </CardContent>
         </Card>
@@ -429,21 +455,21 @@ export default function Home() {
     return (
       <>
         <div className="mb-4 flex h-8 items-center px-1">
-          <h2 className="text-2xl font-black tracking-tight">巡检汇总</h2>
+          <h2 className="text-title font-black tracking-tight">巡检汇总</h2>
         </div>
-        <Card className="mb-3 border-0 shadow-sm ring-1 ring-slate-200/80">
+        <Card className="mb-3">
           <CardContent className="p-4">
             <b className="text-base">皮带区域</b>
             {beltSummary.length ? (
               <div className="mt-3 space-y-2">
                 {beltSummary.map(({ id, rows }) => (
-                  <div className="rounded-2xl bg-slate-50 p-3" key={id}>
+                  <div className="rounded-control bg-muted p-3" key={id}>
                     <b className="text-sm">{id}</b>
                     <div className="mt-2 space-y-1.5">
                       {rows.map(({ item, readings }) => (
                         <div className="flex items-center justify-between gap-3 text-xs" key={item}>
-                          <span className="text-slate-500">{item}</span>
-                          <span className="grid shrink-0 grid-cols-[2em_2ch_3em_2ch] items-center gap-x-1 font-semibold text-slate-900">
+                          <span className="text-muted-foreground">{item}</span>
+                          <span className="grid shrink-0 grid-cols-[2em_2ch_3em_2ch] items-center gap-x-1 font-semibold text-foreground">
                             {[0, 1].map((index) =>
                               readings[index] ? (
                                 <span className="contents" key={readings[index].key}>
@@ -467,51 +493,32 @@ export default function Home() {
                 ))}
               </div>
             ) : (
-              <p className="mt-3 text-sm text-slate-400">暂无已填写数据</p>
+              <p className="mt-3 text-body text-muted-foreground">暂无已填写数据</p>
             )}
           </CardContent>
         </Card>
         {pumpSummary("slag8")}
         {pumpSummary("slag9")}
         <div className="h-20" aria-hidden="true" />
-        <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-30 grid w-[calc(100%-2rem)] max-w-[416px] -translate-x-1/2 grid-cols-[1fr_auto] gap-2">
-          <button
-            type="button"
-            onClick={() => setSelectedRecord(null)}
-            className="rounded-2xl bg-blue-500 py-3 text-sm font-bold text-white shadow-xl shadow-blue-900/20"
-          >
-            返回历史记录
-          </button>
-          <button
-            type="button"
-            aria-label="删除当前记录"
-            onClick={() =>
-              setDeleteRequest({ ids: [record.id], label: `${record.date} ${record.time}` })
-            }
-            className="grid size-12 place-items-center rounded-2xl bg-rose-50 text-rose-500 shadow-xl shadow-rose-900/15"
-          >
-            <Trash2 size={19} />
-          </button>
-        </div>
       </>
     );
   };
-  const history = (
+  const historyList = (
     <>
-      {selectedRecord ? summary(selectedRecord) : <>
       <div className="mb-4 flex h-8 items-center justify-between px-1">
-        <h2 className="text-2xl font-black tracking-tight">历史记录</h2>
+        <h2 className="text-title font-black tracking-tight">历史记录</h2>
         {records.length > 0 && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setManageHistory((current) => !current);
               setSelectedRecordIds([]);
             }}
-            className="h-8 px-2 text-sm font-semibold text-blue-500"
+            className="-mr-2 px-2 text-primary"
           >
             {manageHistory ? "完成" : "管理"}
-          </button>
+          </Button>
         )}
       </div>
       {records.length ? (
@@ -525,13 +532,13 @@ export default function Home() {
                   className="flex flex-1 items-center gap-3 text-left"
                 >
                   <span
-                    className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${selectedRecordIds.includes(r.id) ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300 bg-white"}`}
+                    className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${selectedRecordIds.includes(r.id) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card"}`}
                   >
                     {selectedRecordIds.includes(r.id) && <Check size={14} strokeWidth={3} />}
                   </span>
                   <span>
-                    <b className="block text-[15px]">{r.date}</b>
-                    <span className="mt-1 block text-xs text-slate-400">
+                    <b className="block text-card-title">{r.date}</b>
+                    <span className="mt-1 block text-caption text-muted-foreground">
                       填写时间 {r.time}
                     </span>
                   </span>
@@ -539,19 +546,24 @@ export default function Home() {
               ) : (
                 <>
                   <div className="flex-1">
-                    <b className="block text-[15px]">{r.date}</b>
-                    <p className="mt-1 text-xs text-slate-400">
+                    <b className="block text-card-title">{r.date}</b>
+                    <p className="mt-1 text-caption text-muted-foreground">
                       填写时间 {r.time}
                     </p>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     aria-label={`查看 ${r.date} 的巡检记录`}
-                    onClick={() => setSelectedRecord(r)}
-                    className="grid size-10 place-items-center rounded-xl bg-slate-50 text-slate-400"
+                    onClick={() => {
+                      setHistoryDirection(1);
+                      setSelectedRecord(r);
+                    }}
+                    className="bg-muted text-muted-foreground"
                   >
                     <ChevronRight size={18} />
-                  </button>
+                  </Button>
                 </>
               )}
             </CardContent>
@@ -559,19 +571,22 @@ export default function Home() {
         ))
       ) : (
         <Card>
-          <CardContent className="py-16 text-center text-slate-400">
-            <History className="mx-auto mb-3" />
-            暂无历史记录
+          <CardContent className="py-14 text-center text-muted-foreground">
+            <span className="mx-auto mb-3 grid size-12 place-items-center rounded-control bg-muted text-primary">
+              <History size={22} />
+            </span>
+            <p className="text-body font-medium">暂无历史记录</p>
           </CardContent>
         </Card>
       )}
       {manageHistory && records.length > 0 && (
         <div className="sticky bottom-[max(1rem,env(safe-area-inset-bottom))] mt-4 flex min-h-14 items-center px-1">
-          <span className="text-sm font-semibold text-slate-500">
-            已选择 <b className="text-blue-500">{selectedRecordIds.length}</b> 条
+          <span className="text-body font-semibold text-muted-foreground">
+            已选择 <b className="text-primary">{selectedRecordIds.length}</b> 条
           </span>
-          <button
+          <Button
             type="button"
+            variant="destructive"
             disabled={selectedRecordIds.length === 0}
             onClick={() =>
               setDeleteRequest({
@@ -579,14 +594,77 @@ export default function Home() {
                 label: `${selectedRecordIds.length} 条历史记录`,
               })
             }
-            className="ml-auto flex min-h-10 items-center gap-1.5 rounded-[14px] bg-rose-500 px-4 text-sm font-semibold text-white shadow-lg shadow-rose-500/20 disabled:opacity-40 disabled:shadow-none"
+            className="ml-auto"
           >
             <Trash2 size={16} />
             删除
-          </button>
+          </Button>
         </div>
       )}
-      </>}
+    </>
+  );
+  const history = (
+    <>
+      <AnimatePresence initial={false} mode="wait" custom={historyDirection}>
+        <motion.div
+          key={selectedRecord ? `detail-${selectedRecord.id}` : "list"}
+          custom={historyDirection}
+          variants={historyViewVariants}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          transition={reduceMotion ? { duration: 0 } : historyViewTransition}
+        >
+          {selectedRecord ? summary(selectedRecord) : historyList}
+        </motion.div>
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {selectedRecord && (
+          <motion.div
+            key={`actions-${selectedRecord.id}`}
+            className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 z-30 grid w-[calc(100%-2rem)] max-w-[416px] -translate-x-1/2 grid-cols-[1fr_auto] gap-2"
+            initial={{ opacity: 0, y: reduceMotion ? 0 : 10 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              transition: reduceMotion
+                ? { duration: 0 }
+                : { ...historyViewTransition, delay: historyViewTransition.duration },
+            }}
+            exit={{
+              opacity: 0,
+              y: reduceMotion ? 0 : 8,
+              transition: reduceMotion ? { duration: 0 } : historyViewTransition,
+            }}
+          >
+            <Button
+              type="button"
+              onClick={() => {
+                setHistoryDirection(-1);
+                setSelectedRecord(null);
+              }}
+              className="w-full"
+            >
+              返回历史记录
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="iconLarge"
+              aria-label="删除当前记录"
+              onClick={() =>
+                setDeleteRequest({
+                  ids: [selectedRecord.id],
+                  label: `${selectedRecord.date} ${selectedRecord.time}`,
+                })
+              }
+              className="bg-destructive-soft text-destructive shadow-destructive"
+            >
+              <Trash2 size={19} />
+            </Button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
   const commitSave = () => {
@@ -650,16 +728,15 @@ export default function Home() {
     commitSave();
   };
   return (
-    <main className="mx-auto min-h-svh max-w-md bg-[#f2f2f7] px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
-      <header className="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-5 text-white shadow-xl shadow-slate-900/20">
+    <main className="mx-auto min-h-svh max-w-md bg-background px-page pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))]">
+      <header className="rounded-sheet bg-gradient-to-br from-header-start via-header-middle to-header-end p-5 text-primary-foreground shadow-floating ring-1 ring-white/10">
         <h1 className="text-3xl font-black tracking-tight">夜班巡检</h1>
-        <p className="mt-1 text-sm text-slate-300">
+        <p className="mt-1 text-body text-header-muted">
           把每一次巡检，清晰留在当下。
         </p>
         <div className="mt-5 grid grid-cols-2 gap-2">
           <Button
-            className="bg-white text-slate-900 shadow-none hover:bg-slate-100"
-            variant="default"
+            variant="inverse"
             onClick={() => {
               setValues({});
               setBeltTab("SZ101");
@@ -670,7 +747,6 @@ export default function Home() {
             新建
           </Button>
           <Button
-            className="bg-blue-500 shadow-none hover:bg-blue-400"
             onClick={save}
           >
             <Save />
@@ -678,7 +754,7 @@ export default function Home() {
           </Button>
         </div>
       </header>
-      <nav className="sticky top-[max(0.75rem,env(safe-area-inset-top))] z-20 my-5 grid h-11 grid-cols-4 rounded-2xl bg-white p-1 shadow-sm shadow-slate-900/10">
+      <nav className="sticky top-[max(0.75rem,env(safe-area-inset-top))] z-20 my-5 grid h-11 grid-cols-4 rounded-navigation bg-card/95 p-1 shadow-card ring-1 ring-inset ring-border/70 backdrop-blur">
         {(
           [
             ["slag8", "8#冲渣"],
@@ -689,15 +765,18 @@ export default function Home() {
         ).map(([id, l]) => (
           <button
             key={id}
+            type="button"
+            aria-current={tab === id ? "page" : undefined}
             onClick={() => {
               setTab(id);
               if (id === "history") {
+                setHistoryDirection(-1);
                 setSelectedRecord(null);
                 setManageHistory(false);
                 setSelectedRecordIds([]);
               }
             }}
-            className={`rounded-xl py-2 text-xs font-bold transition ${tab === id ? "bg-blue-500 text-white shadow-sm shadow-blue-500/25" : "text-slate-500"}`}
+            className={`segmented-item relative h-full rounded-navigation-item py-0 text-caption font-bold transition duration-200 before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] ${tab === id ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground"}`}
           >
             {l}
           </button>
@@ -709,7 +788,7 @@ export default function Home() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.18 }}
+          transition={{ duration: 0.14 }}
         >
           {tab === "slag8"
             ? pump("slag8")
@@ -722,119 +801,192 @@ export default function Home() {
       </AnimatePresence>
       <AnimatePresence>
         {saveValidation && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/35 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setSaveValidation(null)}
-          >
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="save-validation-title"
-              className="w-full max-w-md rounded-[26px] bg-white p-4 shadow-2xl"
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 420, damping: 34 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="flex items-start gap-3 px-1 pb-3 pt-1">
-                <span className="grid size-10 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-500">
-                  <AlertTriangle size={20} />
-                </span>
-                <div>
-                  <h3 id="save-validation-title" className="text-lg font-black text-slate-950">
-                    记录尚未填写完整
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-400">请检查以下内容，是否仍要保存？</p>
-                </div>
-              </div>
-              <div className="max-h-[46svh] space-y-3 overflow-y-auto py-1">
-                {saveValidation.unselectedPumps.length > 0 && (
-                  <MissingGroup
-                    title="未选择泵号"
-                    items={saveValidation.unselectedPumps}
-                    tone="amber"
-                  />
-                )}
-                {saveValidation.emptyInputs.length > 0 && (
-                  <MissingGroup
-                    title="未填写数值"
-                    items={saveValidation.emptyInputs}
-                    tone="rose"
-                  />
-                )}
-              </div>
-              <div className="mt-4 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={commitSave}
-                  className="rounded-2xl bg-slate-100 py-3 text-sm font-bold text-slate-600"
-                >
-                  仍然保存
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSaveValidation(null)}
-                  className="rounded-2xl bg-blue-500 py-3 text-sm font-bold text-white"
-                >
-                  返回补充
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
+          <SaveValidationDialog
+            validation={saveValidation}
+            onSave={commitSave}
+            onCancel={() => setSaveValidation(null)}
+          />
         )}
       </AnimatePresence>
       <AnimatePresence>
         {deleteRequest && (
-          <motion.div
-            className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/35 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={() => setDeleteRequest(null)}
-          >
-            <motion.div
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="delete-title"
-              className="w-full max-w-md rounded-[26px] bg-white p-4 shadow-2xl"
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 420, damping: 34 }}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="px-2 pb-4 pt-1 text-center">
-                <h3 id="delete-title" className="text-lg font-black text-slate-950">
-                  确认删除？
-                </h3>
-                <p className="mt-1 text-sm text-slate-400">{deleteRequest.label}</p>
-              </div>
-              <button
-                type="button"
-                onClick={confirmDeleteRecords}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-rose-500 py-3 text-sm font-bold text-white"
-              >
-                <Trash2 size={17} />
-                确认删除
-              </button>
-              <button
-                type="button"
-                onClick={() => setDeleteRequest(null)}
-                className="mt-2 w-full rounded-2xl py-3 text-sm font-semibold text-slate-500"
-              >
-                取消
-              </button>
-            </motion.div>
-          </motion.div>
+          <DeleteDialog
+            request={deleteRequest}
+            onConfirm={confirmDeleteRecords}
+            onCancel={() => setDeleteRequest(null)}
+          />
         )}
       </AnimatePresence>
     </main>
   );
 }
+
+function SaveValidationDialog({
+  validation,
+  onSave,
+  onCancel,
+}: {
+  validation: SaveValidation;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const isPresent = useIsPresent();
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-overlay px-page pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]"
+      style={{ pointerEvents: isPresent ? "auto" : "none" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onCancel}
+    >
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="save-validation-title"
+        aria-hidden={!isPresent}
+        className="w-full max-w-md rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+        style={{ pointerEvents: isPresent ? "auto" : "none" }}
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 40, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 px-1 pb-3 pt-1">
+          <span className="grid size-11 shrink-0 place-items-center rounded-control bg-warning-soft text-warning">
+            <AlertTriangle size={20} />
+          </span>
+          <div>
+            <h3 id="save-validation-title" className="text-lg font-black text-foreground-strong">
+              记录尚未填写完整
+            </h3>
+            <p className="mt-1 text-body text-muted-foreground">请检查以下内容，是否仍要保存？</p>
+          </div>
+        </div>
+        <div className="max-h-[46svh] space-y-3 overflow-y-auto py-1">
+          {validation.unselectedPumps.length > 0 && (
+            <MissingGroup
+              title="未选择泵号"
+              items={validation.unselectedPumps}
+              tone="amber"
+            />
+          )}
+          {validation.emptyInputs.length > 0 && (
+            <MissingGroup
+              title="未填写数值"
+              items={validation.emptyInputs}
+              tone="rose"
+            />
+          )}
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={!isPresent}
+            onClick={onSave}
+            className="bg-muted text-foreground"
+          >
+            仍然保存
+          </Button>
+          <Button
+            type="button"
+            disabled={!isPresent}
+            onClick={onCancel}
+          >
+            返回补充
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function DeleteDialog({
+  request,
+  onConfirm,
+  onCancel,
+}: {
+  request: DeleteRequest;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const isPresent = useIsPresent();
+
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-overlay px-page pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]"
+      style={{ pointerEvents: isPresent ? "auto" : "none" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={onCancel}
+    >
+      <DeleteDialogPanel
+        request={request}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
+    </motion.div>
+  );
+}
+
+function DeleteDialogPanel({
+  request,
+  onConfirm,
+  onCancel,
+}: {
+  request: DeleteRequest;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const isPresent = useIsPresent();
+
+  return (
+    <motion.div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-title"
+      aria-hidden={!isPresent}
+      className="w-full max-w-md rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+      style={{ pointerEvents: isPresent ? "auto" : "none" }}
+      initial={{ y: 40, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      exit={{ y: 40, opacity: 0 }}
+      transition={{ type: "spring", stiffness: 420, damping: 34 }}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="px-2 pb-4 pt-1 text-center">
+        <h3 id="delete-title" className="text-lg font-black text-foreground-strong">
+          确认删除？
+        </h3>
+        <p className="mt-1 text-body text-muted-foreground">{request.label}</p>
+      </div>
+      <Button
+        type="button"
+        variant="destructive"
+        disabled={!isPresent}
+        onClick={onConfirm}
+        className="w-full"
+      >
+        <Trash2 size={17} />
+        确认删除
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        disabled={!isPresent}
+        onClick={onCancel}
+        className="mt-2 w-full"
+      >
+        取消
+      </Button>
+    </motion.div>
+  );
+}
+
 function MissingGroup({
   title,
   items,
@@ -845,19 +997,19 @@ function MissingGroup({
   tone: "amber" | "rose";
 }) {
   return (
-    <section className={`rounded-2xl p-3 ${tone === "amber" ? "bg-amber-50" : "bg-rose-50"}`}>
+    <section className={`rounded-small p-3 ${tone === "amber" ? "bg-warning-soft" : "bg-destructive-soft"}`}>
       <div className="flex items-center justify-between">
-        <b className={`text-sm ${tone === "amber" ? "text-amber-700" : "text-rose-700"}`}>
+        <b className={`text-body ${tone === "amber" ? "text-warning" : "text-destructive"}`}>
           {title}
         </b>
-        <span className={`rounded-full bg-white/80 px-2 py-0.5 text-xs ${tone === "amber" ? "text-amber-600" : "text-rose-600"}`}>
+        <span className={`rounded-full bg-card/80 px-2 py-0.5 text-caption ${tone === "amber" ? "text-warning" : "text-destructive"}`}>
           {items.length} 项
         </span>
       </div>
       <ul className="mt-2 space-y-1.5">
         {items.map((item) => (
-          <li className="flex gap-2 text-xs leading-5 text-slate-600" key={item}>
-            <span className="shrink-0 text-slate-300">•</span>
+          <li className="flex gap-2 text-caption leading-5 text-muted-foreground" key={item}>
+            <span className="shrink-0 text-border">•</span>
             <span>{item}</span>
           </li>
         ))}
@@ -868,7 +1020,7 @@ function MissingGroup({
 function Head({ title }: { title: string; caption: string }) {
   return (
     <div className="mb-4 px-1">
-      <h2 className="text-2xl font-black tracking-tight">{title}</h2>
+      <h2 className="text-title font-black tracking-tight">{title}</h2>
     </div>
   );
 }

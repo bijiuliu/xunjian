@@ -1,38 +1,167 @@
 @import "tailwindcss";
 
-* { -webkit-tap-highlight-color: transparent; }
-html { background: #f2f2f7; }
-body { margin: 0; }
+/*
+ * Design tokens
+ * Keep semantic values here. Components should consume the Tailwind aliases
+ * below rather than introducing a new visual scale ad hoc.
+ */
+:root {
+  --background: #f2f2f7;
+  --foreground: #0f172a;
+  --foreground-strong: #020617;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --primary: #0a84ff;
+  --primary-foreground: #ffffff;
+  --secondary: #e8f2ff;
+  --secondary-foreground: #0a5fc2;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --subtle-foreground: #94a3b8;
+  --border: #e2e8f0;
+  --overlay: rgb(2 6 23 / 0.38);
+  --input-foreground: #000000;
+  --header-start: #020617;
+  --header-middle: #0f172a;
+  --header-end: #172554;
+  --header-muted: #cbd5e1;
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --success-soft: #f0fdf4;
+  --warning: #d97706;
+  --warning-foreground: #ffffff;
+  --warning-soft: #fffbeb;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #fff1f2;
+
+  --radius-small: 0.625rem;
+  --radius-control: 0.875rem;
+  --radius-navigation: 1.375rem;
+  --radius-card: 1.375rem;
+  --radius-sheet: 1.625rem;
+  /* Segmented navigation: 22px outer radius - 4px inset = 18px item radius. */
+  --radius-navigation-item: calc(var(--radius-navigation) - 0.25rem);
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow-floating: 0 12px 28px rgb(15 23 42 / 0.16);
+  --shadow-primary: 0 10px 24px rgb(10 132 255 / 0.22);
+  --shadow-destructive: 0 10px 24px rgb(239 68 68 / 0.18);
+
+  --space-page: 1rem;
+  --space-section: 1.25rem;
+  --space-compact: 0.375rem;
+  --space-control-y: 0.5rem;
+  --font-size-label: 0.6875rem;
+  --font-size-caption: 0.75rem;
+  --font-size-body: 0.875rem;
+  --font-size-card-title: 0.9375rem;
+  --font-size-input: 1.0625rem;
+  --font-size-title: 1.5rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-strong: var(--foreground-strong);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-border: var(--border);
+  --color-overlay: var(--overlay);
+  --color-input-foreground: var(--input-foreground);
+  --color-header-start: var(--header-start);
+  --color-header-middle: var(--header-middle);
+  --color-header-end: var(--header-end);
+  --color-header-muted: var(--header-muted);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --radius-small: var(--radius-small);
+  --radius-control: var(--radius-control);
+  --radius-navigation: var(--radius-navigation);
+  --radius-card: var(--radius-card);
+  --radius-sheet: var(--radius-sheet);
+  --radius-navigation-item: var(--radius-navigation-item);
+  --shadow-card: var(--shadow-card);
+  --shadow-floating: var(--shadow-floating);
+  --shadow-primary: var(--shadow-primary);
+  --shadow-destructive: var(--shadow-destructive);
+  --spacing-page: var(--space-page);
+  --spacing-section: var(--space-section);
+  --spacing-compact: var(--space-compact);
+  --text-label: var(--font-size-label);
+  --text-caption: var(--font-size-caption);
+  --text-body: var(--font-size-body);
+  --text-card-title: var(--font-size-card-title);
+  --text-title: var(--font-size-title);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { background: var(--background); }
+body { margin: 0; color: var(--foreground); text-rendering: optimizeLegibility; }
+button, input, select { font-family: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; }
+button:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  outline-offset: 2px;
+}
+
+.segmented-item:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-card), inset 0 0 0 2px color-mix(in srgb, var(--primary) 24%, transparent);
+}
 
 /* 手机端泵号下拉：保留原生选择的可靠性，但改为 App 风格的触发器。 */
 select {
   appearance: none;
   -webkit-appearance: none;
-  background-color: #ffffff !important;
+  background-color: var(--card) !important;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%230a84ff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") !important;
   background-position: right 14px center !important;
   background-repeat: no-repeat !important;
-  border: 1px solid #dbeafe;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, .04), inset 0 0 0 1px rgba(255,255,255,.85);
+  border: 1px solid color-mix(in srgb, var(--primary) 16%, white);
+  box-shadow: var(--shadow-card), inset 0 0 0 1px rgb(255 255 255 / 0.85);
   padding-right: 44px !important;
   transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
 }
 
 select:focus {
-  border-color: #60a5fa;
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, .14);
+  border-color: color-mix(in srgb, var(--primary) 64%, white);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 14%, transparent);
 }
 
 /* 冲渣区直接展示设备卡片，不显示重复的分组文字。 */
 /* 冲渣泵的四个数值点位横向并列；皮带区域仍维持两列。 */
-main section .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 6px; }
-main section .grid.grid-cols-2 > label { padding: 8px 6px; text-align: center; }
-main section .grid.grid-cols-2 > label span { font-size: 11px; line-height: 1.2; }
-main section .grid.grid-cols-2 > label input { font-size: 17px; text-align: center; }
+main section .grid.grid-cols-2 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: var(--space-compact); }
+main section .grid.grid-cols-2 > label { padding: var(--space-control-y) var(--space-compact); text-align: center; }
+main section .grid.grid-cols-2 > label span { font-size: var(--font-size-label); line-height: 1.2; }
+main section .grid.grid-cols-2 > label input { font-size: var(--font-size-input); text-align: center; }
 main section .mt-3.flex.items-center.border-t { display: none; }
 
-input { color: #000 !important; }
+input { color: var(--input-foreground) !important; }
 
 
 
-select option:disabled { color: #a0a6b2; background: #f1f3f6; }
+select option:disabled { color: var(--muted-foreground); background: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

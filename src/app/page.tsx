@@ -38,6 +38,8 @@ const belts = [
   { id: "SZ201", ends: ["南", "北"] },
   { id: "SZ201-N", ends: ["南", "北"] },
 ];
+type BeltTab = (typeof belts)[number]["id"];
+type Draft = { values: Values; beltTab: BeltTab };
 const items = [
   "电机 / 减速机",
   "液力耦合器",
@@ -55,7 +57,10 @@ const checks = new Set([
   "头轮气管",
   "尾轮下料口",
 ]);
+const DRAFT_STORAGE_KEY = "night-inspection-draft";
 const k = (...x: string[]) => x.join("__");
+const isBeltTab = (value: unknown): value is BeltTab =>
+  belts.some(({ id }) => id === value);
 const visibleBeltItems = (id: string) =>
   items.filter(
     (item) =>
@@ -91,19 +96,42 @@ const beltPoints = (id: string, ends: string[], item: string) => {
 };
 export default function Home() {
   const [tab, setTab] = useState<Tab>("slag8"),
-    [beltTab, setBeltTab] = useState<(typeof belts)[number]["id"]>("SZ101"),
+    [beltTab, setBeltTab] = useState<BeltTab>("SZ101"),
     [values, setValues] = useState<Values>({}),
     [records, setRecords] = useState<InspectionRecord[]>([]),
     [selectedRecord, setSelectedRecord] = useState<InspectionRecord | null>(null),
     [manageHistory, setManageHistory] = useState(false),
     [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]),
     [deleteRequest, setDeleteRequest] = useState<{ ids: string[]; label: string } | null>(null),
-    [saveValidation, setSaveValidation] = useState<SaveValidation | null>(null);
+    [saveValidation, setSaveValidation] = useState<SaveValidation | null>(null),
+    [draftReady, setDraftReady] = useState(false);
   useEffect(
     () =>
       setRecords(JSON.parse(localStorage.getItem("night-inspection") || "[]") as InspectionRecord[]),
     [],
   );
+  useEffect(() => {
+    try {
+      const storedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (storedDraft) {
+        const draft = JSON.parse(storedDraft) as unknown;
+        if (draft && typeof draft === "object" && "values" in draft) {
+          const savedDraft = draft as Partial<Draft>;
+          if (savedDraft.values) setValues(savedDraft.values);
+          if (isBeltTab(savedDraft.beltTab)) setBeltTab(savedDraft.beltTab);
+        } else if (draft && typeof draft === "object") {
+          setValues(draft as Values);
+        }
+      }
+    } catch {
+      localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+  useEffect(() => {
+    if (draftReady) localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ values, beltTab }));
+  }, [beltTab, draftReady, values]);
   const put = (n: string, v: string) => setValues((x) => ({ ...x, [n]: v }));
   const status = (n: string) => (
     <button
@@ -143,12 +171,14 @@ export default function Home() {
       ...Object.fromEntries(keys.map((key) => [key, ""])),
     }));
   };
-  const clearPump = (area: "slag8" | "slag9", name: string, index: number) =>
+  const clearPump = (area: "slag8" | "slag9", name: string, index: number) => {
     clearKeys(
       ["no", "south", "north", "front", "body"].map((field) =>
         k(area, name, String(index), field),
       ),
     );
+    toast.success(`已清空${area === "slag8" ? "8#" : "9#"}${name}`);
+  };
   const choosePump = (
     area: "slag8" | "slag9",
     name: string,
@@ -166,7 +196,7 @@ export default function Home() {
       return { ...current, [currentKey]: pumpNo };
     });
   };
-  const clearBeltItem = (id: string, ends: string[], item: string) =>
+  const clearBeltItem = (id: string, ends: string[], item: string) => {
     clearKeys(
       id === "SZ101" && item === "电机 / 减速机"
         ? [k("belt", id, item, "motor")]
@@ -174,6 +204,8 @@ export default function Home() {
           ? [k("belt", id, item, "fluid")]
           : ends.map((end) => k("belt", id, item, end)),
     );
+    toast.success(`已清空${id} ${id === "SZ101" && item === "电机 / 减速机" ? "电机" : item}`);
+  };
   const toggleRecord = (id: string) =>
     setSelectedRecordIds((current) =>
       current.includes(id)
@@ -203,24 +235,26 @@ export default function Home() {
           {[0, 1].map((i) => (
             <Card className="mb-3" key={i}>
               <CardContent>
-                <div className="mb-3 flex items-center justify-between">
-                  <b>{name}</b>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <b className="shrink-0">{name}</b>
+                    <select
+                      value={values[k(area, name, String(i), "no")] || ""}
+                      onChange={(e) => choosePump(area, name, i, e.target.value)}
+                      className="w-[108px] rounded-xl bg-slate-50 p-3 font-semibold leading-[18px] text-blue-500 outline-none"
+                    >
+                      <option value="">选择</option>
+                      {ops.map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
                   <button
                     type="button"
                     onClick={() => clearPump(area, name, i)}
-                    className="text-xs text-slate-400"
+                    className="shrink-0 text-xs text-slate-400"
                   >
                     清空
                   </button>
                 </div>
-                <select
-                  value={values[k(area, name, String(i), "no")] || ""}
-                  onChange={(e) => choosePump(area, name, i, e.target.value)}
-                  className="w-full rounded-xl bg-slate-50 p-3 font-semibold text-blue-500 outline-none"
-                >
-                  <option value="">选择运行泵号</option>
-                  {ops.map((o) => <option key={o}>{o}</option>)}
-                </select>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   {field("南", k(area, name, String(i), "south"))}
                   {field("北", k(area, name, String(i), "north"))}
@@ -244,13 +278,13 @@ export default function Home() {
   const belt = (
     <>
       <Head title="皮带区域" caption="两端轴位录数值，滚面与状态项默认正常。" />
-      <div className="mb-4 grid grid-cols-3 gap-1 rounded-2xl bg-slate-200/80 p-1.5">
+      <div className="sticky top-[calc(max(0.75rem,env(safe-area-inset-top))+3.25rem)] z-10 mb-4 grid h-[42px] grid-cols-3 gap-1 rounded-xl bg-slate-200 p-1">
         {belts.map((b) => (
           <button
             key={b.id}
             type="button"
             onClick={() => setBeltTab(b.id)}
-            className={`rounded-xl py-2.5 text-xs font-bold transition ${beltTab === b.id ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}
+            className={`rounded-lg py-2 text-[11px] font-bold transition ${beltTab === b.id ? "bg-white text-blue-600 shadow-sm" : "text-slate-500"}`}
           >
             {b.id}
           </button>
@@ -628,6 +662,8 @@ export default function Home() {
             variant="default"
             onClick={() => {
               setValues({});
+              setBeltTab("SZ101");
+              localStorage.removeItem(DRAFT_STORAGE_KEY);
               toast("已新建空白记录");
             }}
           >
@@ -642,7 +678,7 @@ export default function Home() {
           </Button>
         </div>
       </header>
-      <nav className="my-5 grid grid-cols-4 rounded-xl bg-slate-200 p-1">
+      <nav className="sticky top-[max(0.75rem,env(safe-area-inset-top))] z-20 my-5 grid h-11 grid-cols-4 rounded-2xl bg-white p-1 shadow-sm shadow-slate-900/10">
         {(
           [
             ["slag8", "8#冲渣"],
@@ -661,7 +697,7 @@ export default function Home() {
                 setSelectedRecordIds([]);
               }
             }}
-            className={`rounded-lg py-2 text-[11px] font-bold ${tab === id ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
+            className={`rounded-xl py-2 text-xs font-bold transition ${tab === id ? "bg-blue-500 text-white shadow-sm shadow-blue-500/25" : "text-slate-500"}`}
           >
             {l}
           </button>
@@ -836,4 +872,3 @@ function Head({ title }: { title: string; caption: string }) {
     </div>
   );
 }
-

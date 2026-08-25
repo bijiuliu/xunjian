@@ -59,7 +59,7 @@ const historyViewVariants = {
   exit: (direction: 1 | -1) => ({ opacity: 0, x: direction === 1 ? -14 : 18 }),
 };
 const historyViewTransition = {
-  duration: 0.14,
+  duration: 0.18,
   ease: [0.22, 1, 0.36, 1] as const,
 };
 const k = (...x: string[]) => x.join("__");
@@ -788,7 +788,7 @@ export default function Home() {
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.14 }}
+          transition={{ duration: 0.18 }}
         >
           {tab === "slag8"
             ? pump("slag8")

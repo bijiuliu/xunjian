@@ -27,3 +27,12 @@ export type DeleteRequest = {
   ids: string[];
   label: string;
 };
+
+export type InspectionImportPreview = {
+  fileName: string;
+  exportedAt: string | null;
+  records: InspectionRecord[];
+  newRecordCount: number;
+  duplicateCount: number;
+  invalidCount: number;
+};

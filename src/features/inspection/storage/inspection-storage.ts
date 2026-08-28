@@ -5,9 +5,12 @@ import type {
   InspectionRecord,
   InspectionValues,
 } from "../model/types";
+import { isInspectionRecord } from "./inspection-backup";
 
 export const RECORDS_STORAGE_KEY = "night-inspection";
 export const DRAFT_STORAGE_KEY = "night-inspection-draft";
+export const LAST_BACKUP_STORAGE_KEY = "night-inspection-last-backup";
+export const IMPORT_UNDO_STORAGE_KEY = "night-inspection-import-undo";
 
 export type StoredInspectionState = {
   records: InspectionRecord[];
@@ -25,7 +28,7 @@ export function loadInspectionState(): StoredInspectionState {
       localStorage.getItem(RECORDS_STORAGE_KEY) || "[]",
     ) as unknown;
     if (Array.isArray(storedRecords)) {
-      records = storedRecords as InspectionRecord[];
+      records = storedRecords.filter(isInspectionRecord);
     }
   } catch {
     records = [];
@@ -60,4 +63,42 @@ export function saveInspectionDraft(draft: InspectionDraft) {
 
 export function clearInspectionDraft() {
   localStorage.removeItem(DRAFT_STORAGE_KEY);
+}
+
+export function loadLastBackupAt() {
+  return localStorage.getItem(LAST_BACKUP_STORAGE_KEY);
+}
+
+export function saveLastBackupAt(value: string) {
+  localStorage.setItem(LAST_BACKUP_STORAGE_KEY, value);
+}
+
+export function saveImportUndo(records: InspectionRecord[]) {
+  localStorage.setItem(
+    IMPORT_UNDO_STORAGE_KEY,
+    JSON.stringify({ savedAt: new Date().toISOString(), records }),
+  );
+}
+
+export function loadImportUndo(): InspectionRecord[] | null {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(IMPORT_UNDO_STORAGE_KEY) || "null",
+    ) as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      "records" in parsed &&
+      Array.isArray(parsed.records)
+    ) {
+      return parsed.records.filter(isInspectionRecord);
+    }
+  } catch {
+    localStorage.removeItem(IMPORT_UNDO_STORAGE_KEY);
+  }
+  return null;
+}
+
+export function clearImportUndo() {
+  localStorage.removeItem(IMPORT_UNDO_STORAGE_KEY);
 }

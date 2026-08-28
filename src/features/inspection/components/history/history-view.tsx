@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, ChevronRight, History, Trash2 } from "lucide-react";
+import { ArchiveRestore, Check, ChevronRight, History, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useStickyEdgeState } from "../../hooks/use-sticky-edge-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -35,6 +35,7 @@ type HistoryViewProps = {
   onToggleManage: () => void;
   onToggleRecord: (id: string) => void;
   onDeleteRequest: (request: DeleteRequest) => void;
+  onOpenBackup: () => void;
 };
 
 export function HistoryView({
@@ -49,6 +50,7 @@ export function HistoryView({
   onToggleManage,
   onToggleRecord,
   onDeleteRequest,
+  onOpenBackup,
 }: HistoryViewProps) {
   return (
     <>
@@ -73,6 +75,7 @@ export function HistoryView({
               onToggleManage={onToggleManage}
               onToggleRecord={onToggleRecord}
               onDeleteRequest={onDeleteRequest}
+              onOpenBackup={onOpenBackup}
             />
           )}
         </motion.div>
@@ -135,6 +138,7 @@ type HistoryListProps = Pick<
   | "onToggleManage"
   | "onToggleRecord"
   | "onDeleteRequest"
+  | "onOpenBackup"
 >;
 
 function HistoryList({
@@ -145,6 +149,7 @@ function HistoryList({
   onToggleManage,
   onToggleRecord,
   onDeleteRequest,
+  onOpenBackup,
 }: HistoryListProps) {
   const { elementRef: selectionActionsRef, isStuck } = useStickyEdgeState(
     manageHistory && records.length > 0,
@@ -152,18 +157,29 @@ function HistoryList({
 
   return (
     <>
-      <div className="mb-4 flex h-8 items-center justify-between px-1">
+      <div className="mb-4 flex min-h-8 items-center justify-between px-1">
         <h2 className="text-title font-black tracking-tight">历史记录</h2>
-        {records.length > 0 && (
+        <div className="-mr-2 flex items-center">
           <Button
             type="button"
             variant="ghost"
-            onClick={onToggleManage}
-            className="-mr-2 px-2 text-primary"
+            onClick={onOpenBackup}
+            className="px-2 text-primary"
           >
-            {manageHistory ? "完成" : "管理"}
+            <ArchiveRestore size={16} />
+            备份
           </Button>
-        )}
+          {records.length > 0 && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onToggleManage}
+              className="px-2 text-primary"
+            >
+              {manageHistory ? "完成" : "管理"}
+            </Button>
+          )}
+        </div>
       </div>
       {records.length ? (
         records.map((record) => (

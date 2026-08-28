@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { INSPECTION_TABS } from "../model/config";
 import { useInspectionController } from "../hooks/use-inspection-controller";
 import { BeltArea } from "./belt/belt-area";
+import { BackupDialog } from "./dialogs/backup-dialog";
 import { DeleteDialog } from "./dialogs/delete-dialog";
 import { SaveValidationDialog } from "./dialogs/save-validation-dialog";
 import { HistoryView } from "./history/history-view";
@@ -53,6 +54,7 @@ export function NightInspectionApp() {
         onToggleManage={actions.toggleHistoryManagement}
         onToggleRecord={actions.toggleRecord}
         onDeleteRequest={actions.setDeleteRequest}
+        onOpenBackup={actions.openBackup}
       />
     );
 
@@ -115,6 +117,23 @@ export function NightInspectionApp() {
             request={state.deleteRequest}
             onConfirm={actions.confirmDeleteRecords}
             onCancel={actions.cancelDeleteRequest}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {state.backupOpen && (
+          <BackupDialog
+            recordCount={state.records.length}
+            lastBackupAt={state.lastBackupAt}
+            importPreview={state.importPreview}
+            canUndoImport={state.canUndoImport}
+            onExport={actions.exportBackup}
+            onImportFile={actions.previewImportFile}
+            onMergeImport={actions.mergeImport}
+            onReplaceImport={actions.replaceImport}
+            onCancelPreview={actions.cancelImportPreview}
+            onUndoImport={actions.undoImport}
+            onClose={actions.closeBackup}
           />
         )}
       </AnimatePresence>

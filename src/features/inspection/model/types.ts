@@ -16,6 +16,7 @@ export type InspectionRecord = {
 export type InspectionDraft = {
   values: InspectionValues;
   beltTab: BeltId;
+  updatedAt?: string;
 };
 
 export type SaveValidation = {

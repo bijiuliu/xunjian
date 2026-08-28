@@ -1,6 +1,6 @@
 # 夜班巡检项目交接文档
 
-> 更新日期：2026-08-27
+> 更新日期：2026-08-28
 > 用途：让新的 Codex 对话快速接手当前代码，避免重新梳理已确认的纸表规则、回退已撤销的交互，或破坏已有浏览器数据。
 
 ## 1. 当前状态（60 秒接手）
@@ -9,8 +9,8 @@
 - 本地开发地址：<http://localhost:3000/>（本次会话的开发服务器已启动；新会话应自行执行 `npm run dev`）
 - GitHub 仓库：<https://github.com/bijiuliu/xunjian>
 - GitHub Pages 目标地址：<https://bijiuliu.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
-- 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、PWA manifest。
-- 产品形态：仅手机端的 App 风格夜班巡检工具；无账号、无服务端、无云同步。
+- 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、Supabase Auth/Postgres、PWA manifest。
+- 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、本地优先缓存和跨设备云同步。
 - 主导航顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
 - 架构规范：`ARCHITECTURE.md`。
@@ -23,7 +23,11 @@ src/features/inspection/
 ├─ components/                           # 巡检、泵区、皮带、历史、弹窗视图
 ├─ hooks/use-inspection-controller.ts    # 状态、流程、Toast 与用户操作编排
 ├─ model/                                # 类型、配置、字段规则、保存校验（纯 TypeScript）
-└─ storage/inspection-storage.ts         # 唯一的 localStorage 访问层
+├─ storage/inspection-storage.ts         # 唯一的 localStorage 访问层
+└─ sync/inspection-cloud-sync.ts         # Supabase 同步、软删除与离线队列
+src/features/auth/                       # 登录、注册与会话状态
+src/lib/supabase/client.ts               # 浏览器 Supabase 客户端
+supabase/migrations/                     # 数据表与 RLS 策略
 ```
 
 `src/app/page.tsx` 不再承载巡检业务。新的客户端根组件是 `src/features/inspection/components/night-inspection-app.tsx`。
@@ -176,11 +180,13 @@ type InspectionRecord = {
 ```
 
 - 历史记录键：`night-inspection`，存储 `InspectionRecord[]`。
-- 草稿键：`night-inspection-draft`，当前格式为 `{ values, beltTab }`。
+- 草稿键：`night-inspection-draft`，当前格式为 `{ values, beltTab, updatedAt? }`。
 - 草稿读取必须兼容旧版只保存 `values` 对象的格式。
 - 所有读取、写入、清理 localStorage 的代码只能放在 `src/features/inspection/storage/inspection-storage.ts`；组件和领域模型不得直接访问 `localStorage`。
 - 修改字段 key、记录结构或存储键之前，必须先设计归一化/迁移并验证旧浏览器数据。
-- 清理浏览器站点数据、换浏览器或换手机会丢失记录。
+- 未配置 Supabase 时，清理浏览器站点数据、换浏览器或换手机会丢失记录；配置并登录后可从云端恢复。
+- 第一个登录账号接管未归属账号的旧数据；同一浏览器中的不同账号使用隔离缓存。
+- 云端表使用 RLS 按 `auth.uid() = user_id` 隔离；记录采用软删除，草稿按更新时间解决冲突。
 - 当前只有 manifest，没有可靠 Service Worker 离线缓存；不要宣称“完全离线”。
 
 ## 6. 架构与部署约束
@@ -217,14 +223,13 @@ allowedDevOrigins: ["127.0.0.1", "localhost"]
 
 1. 快速连续点击一级导航时，选中标签和内容偶尔错位。根因与带退出等待的 `AnimatePresence mode="wait"` 有关；不能简单删除动画，必须同时保留细腻切换体验。
 2. 一级板块切换及保存/删除 Dialog 尚未完整遵从“减少动态效果”。
-3. 只有本地存储，无数据导出、备份、跨设备同步和云端账号。
+3. Supabase 真机联调依赖项目环境变量、迁移 SQL 和 Authentication URL 配置；仓库本身不包含这些凭据。
 4. PWA manifest 不等于完整离线能力，尚未实现 Service Worker 静态资源缓存。
 
 ### 尚未实现
 
 - APK：可用 Capacitor 包装当前静态导出，无需引入 Ionic UI；当前未安装或配置。
-- 云同步、登录、多设备历史记录。
-- 历史记录导出、导入、备份。
+- Service Worker 静态资源缓存与真正的完整离线安装体验。
 
 ## 8. 开发与验证
 

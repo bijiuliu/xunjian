@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   getBeltItemKeys,
@@ -36,8 +36,23 @@ import {
   saveLastBackupAt,
   saveInspectionRecords,
 } from "../storage/inspection-storage";
+import {
+  deleteCloudInspectionRecords,
+  pushInspectionDraft,
+  pushInspectionRecord,
+  replaceCloudInspectionRecords,
+  syncInspectionAccount,
+} from "../sync/inspection-cloud-sync";
+import { prepareStorageForUser, saveCurrentAccountCache } from "../storage/inspection-storage";
 
-export function useInspectionController() {
+export type InspectionSyncStatus =
+  | "local"
+  | "syncing"
+  | "synced"
+  | "offline"
+  | "error";
+
+export function useInspectionController(userId?: string) {
   const [tab, setTab] = useState<InspectionTab>("slag8");
   const [beltTab, setBeltTab] = useState<BeltId>("SZ101");
   const [values, setValues] = useState<InspectionValues>({});
@@ -56,24 +71,108 @@ export function useInspectionController() {
   const [importPreview, setImportPreview] =
     useState<InspectionImportPreview | null>(null);
   const [canUndoImport, setCanUndoImport] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<InspectionSyncStatus>(
+    userId ? "syncing" : "local",
+  );
+  const syncInFlight = useRef(false);
+
+  const persistRecords = useCallback(
+    (next: InspectionRecord[]) => {
+      saveInspectionRecords(next);
+      if (userId) saveCurrentAccountCache(userId);
+    },
+    [userId],
+  );
+
+  const markCloudFailure = useCallback(() => {
+    setSyncStatus(navigator.onLine ? "error" : "offline");
+  }, []);
+
+  const runCloudChange = useCallback(
+    async (operation: Promise<void>) => {
+      setSyncStatus("syncing");
+      try {
+        await operation;
+        setSyncStatus("synced");
+      } catch {
+        markCloudFailure();
+      }
+    },
+    [markCloudFailure],
+  );
+
+  const syncNow = useCallback(async () => {
+    if (!userId || syncInFlight.current) return;
+    syncInFlight.current = true;
+    setSyncStatus("syncing");
+    try {
+      const localState = loadInspectionState();
+      const result = await syncInspectionAccount(userId, localState);
+      saveInspectionRecords(result.records);
+      saveInspectionDraft(result.draft);
+      saveCurrentAccountCache(userId);
+      setRecords(result.records);
+      setValues(result.draft.values);
+      setBeltTab(result.draft.beltTab);
+      setSyncStatus("synced");
+    } catch {
+      markCloudFailure();
+    } finally {
+      syncInFlight.current = false;
+    }
+  }, [markCloudFailure, userId]);
 
   useEffect(() => {
-    const loadStorage = window.setTimeout(() => {
-      const stored = loadInspectionState();
+    let active = true;
+    const loadStorage = window.setTimeout(async () => {
+      const stored = userId
+        ? prepareStorageForUser(userId)
+        : loadInspectionState();
+      if (!active) return;
       setRecords(stored.records);
       setValues(stored.values);
       setBeltTab(stored.beltTab);
       setLastBackupAt(loadLastBackupAt());
       setCanUndoImport(Boolean(loadImportUndo()));
+      if (userId) {
+        await syncNow();
+        if (!active) return;
+      }
       setDraftReady(true);
     }, 0);
 
-    return () => window.clearTimeout(loadStorage);
-  }, []);
+    return () => {
+      active = false;
+      window.clearTimeout(loadStorage);
+    };
+  }, [syncNow, userId]);
 
   useEffect(() => {
-    if (draftReady) saveInspectionDraft({ values, beltTab });
-  }, [beltTab, draftReady, values]);
+    if (!draftReady) return;
+    const draft = { values, beltTab, updatedAt: new Date().toISOString() };
+    saveInspectionDraft(draft);
+    if (userId) saveCurrentAccountCache(userId);
+
+    if (!userId) return;
+    const uploadDraft = window.setTimeout(() => {
+      void runCloudChange(pushInspectionDraft(userId, draft));
+    }, 800);
+    return () => window.clearTimeout(uploadDraft);
+  }, [beltTab, draftReady, runCloudChange, userId, values]);
+
+  useEffect(() => {
+    if (!userId || !draftReady) return;
+    const handleOnline = () => void syncNow();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void syncNow();
+    };
+    window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [draftReady, syncNow, userId]);
 
   const updateValue = (fieldKey: string, value: string) => {
     setValues((current) => ({ ...current, [fieldKey]: value }));
@@ -155,7 +254,7 @@ export function useInspectionController() {
     if (!deleteRequest) return;
     const deleting = new Set(deleteRequest.ids);
     const next = records.filter((record) => !deleting.has(record.id));
-    saveInspectionRecords(next);
+    persistRecords(next);
     setRecords(next);
     if (selectedRecord && deleting.has(selectedRecord.id)) {
       setHistoryDirection(-1);
@@ -164,6 +263,11 @@ export function useInspectionController() {
     setSelectedRecordIds([]);
     setManageHistory(false);
     setDeleteRequest(null);
+    if (userId) {
+      void runCloudChange(
+        deleteCloudInspectionRecords(userId, deleteRequest.ids),
+      );
+    }
     toast.success(
       deleteRequest.ids.length > 1
         ? `已删除 ${deleteRequest.ids.length} 条记录`
@@ -180,13 +284,16 @@ export function useInspectionController() {
       values,
     };
     const next = [record, ...records];
-    saveInspectionRecords(next);
+    persistRecords(next);
     setRecords(next);
     setSelectedRecord(null);
     setManageHistory(false);
     setSelectedRecordIds([]);
     setSaveValidation(null);
     setTab("history");
+    if (userId) {
+      void runCloudChange(pushInspectionRecord(userId, record));
+    }
     toast.success("本次巡检已保存");
   };
 
@@ -273,13 +380,18 @@ export function useInspectionController() {
     }
 
     try {
-      saveInspectionRecords(previousRecords);
+      persistRecords(previousRecords);
       setRecords(previousRecords);
       clearImportUndo();
       setCanUndoImport(false);
       setSelectedRecord(null);
       setManageHistory(false);
       setSelectedRecordIds([]);
+      if (userId) {
+        void runCloudChange(
+          replaceCloudInspectionRecords(userId, previousRecords),
+        );
+      }
       toast.success("已撤销上次恢复");
     } catch {
       toast.error("撤销失败，原备份仍已保留");
@@ -304,13 +416,16 @@ export function useInspectionController() {
 
     try {
       saveImportUndo(records);
-      saveInspectionRecords(next);
+      persistRecords(next);
       setRecords(next);
       setCanUndoImport(true);
       setSelectedRecord(null);
       setManageHistory(false);
       setSelectedRecordIds([]);
       closeBackup();
+      if (userId) {
+        void runCloudChange(replaceCloudInspectionRecords(userId, next));
+      }
       toast.success(
         mode === "merge"
           ? `已恢复 ${importPreview.newRecordCount} 条历史记录`
@@ -338,6 +453,7 @@ export function useInspectionController() {
       lastBackupAt,
       importPreview,
       canUndoImport,
+      syncStatus,
     },
     actions: {
       updateValue,
@@ -365,6 +481,7 @@ export function useInspectionController() {
       mergeImport: () => applyImport("merge"),
       replaceImport: () => applyImport("replace"),
       undoImport,
+      syncNow,
     },
   };
 }

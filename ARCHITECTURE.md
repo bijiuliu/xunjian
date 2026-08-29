@@ -15,7 +15,7 @@ src/
 │  ├─ storage/                  # localStorage 兼容层
 │  ├─ sync/                     # Supabase 云同步与离线操作队列
 │  └─ index.ts                  # 模块公开入口
-├─ features/auth/               # Supabase 登录、注册与会话状态
+├─ features/auth/               # Supabase 登录、注册、邮箱验证与密码恢复
 ├─ lib/supabase/                # 浏览器 Supabase 客户端
 └─ lib/                         # 与具体业务无关的通用工具
 ```

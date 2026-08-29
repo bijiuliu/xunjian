@@ -45,6 +45,7 @@ export function NightInspectionApp() {
         passwordRecovery={auth.status === "password-recovery"}
         onSignIn={auth.signIn}
         onSignUp={auth.signUp}
+        onResendSignUpConfirmation={auth.resendSignUpConfirmation}
         onRequestPasswordReset={auth.requestPasswordReset}
         onUpdatePassword={auth.updatePassword}
       />

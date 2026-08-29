@@ -89,7 +89,24 @@ export function useAuth() {
       },
     });
     if (error) throw error;
-    return { needsEmailConfirmation: !data.session };
+    return {
+      needsEmailConfirmation: !data.session,
+      alreadyRegistered:
+        Array.isArray(data.user?.identities) && data.user.identities.length === 0,
+    };
+  };
+
+  const resendSignUpConfirmation = async (email: string) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) throw new Error("Supabase 尚未配置");
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email,
+      options: {
+        emailRedirectTo: getCurrentAppUrl(),
+      },
+    });
+    if (error) throw error;
   };
 
   const requestPasswordReset = async (email: string) => {
@@ -124,6 +141,7 @@ export function useAuth() {
     user,
     signIn,
     signUp,
+    resendSignUpConfirmation,
     requestPasswordReset,
     updatePassword,
     signOut,

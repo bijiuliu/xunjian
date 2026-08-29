@@ -398,7 +398,7 @@ function EmailField({ value, error, disabled, onChange }: EmailFieldProps) {
         aria-describedby={error ? "auth-email-error" : undefined}
         onChange={(event) => onChange(event.target.value)}
         placeholder="name@example.com"
-        className={`min-h-12 w-full rounded-control border bg-card px-4 text-body shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 disabled:opacity-45 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"}`}
+        className={`min-h-12 w-full rounded-control border bg-card px-4 text-base shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 disabled:opacity-45 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"}`}
       />
       {error && (
         <span

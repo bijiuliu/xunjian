@@ -37,7 +37,7 @@ export function PasswordField({
           type={visible ? "text" : "password"}
           aria-invalid={Boolean(error)}
           aria-describedby={errorId}
-          className={`min-h-12 w-full rounded-control border bg-card px-4 pr-12 text-body shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"} ${className ?? ""}`}
+          className={`min-h-12 w-full rounded-control border bg-card px-4 pr-12 text-base shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"} ${className ?? ""}`}
         />
         <button
           type="button"

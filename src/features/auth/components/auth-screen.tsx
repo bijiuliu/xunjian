@@ -7,7 +7,6 @@ import {
   KeyRound,
   Mail,
   ShieldCheck,
-  UserRoundCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -31,7 +30,7 @@ type AuthMode =
   | "forgot-password"
   | "reset-password";
 
-type AuthNotice = "confirmation-sent" | "already-registered" | null;
+type AuthNotice = "confirmation-sent" | null;
 
 type AuthScreenProps = {
   passwordRecovery?: boolean;
@@ -63,6 +62,8 @@ export function AuthScreen({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [notice, setNotice] = useState<AuthNotice>(null);
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
+  const [emailShakeKey, setEmailShakeKey] = useState(0);
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
@@ -85,6 +86,7 @@ export function AuthScreen({
     setPassword("");
     setConfirmPassword("");
     setNotice(null);
+    setAlreadyRegistered(false);
     setResetEmailSent(false);
     setFieldErrors({});
     setFormError(null);
@@ -94,6 +96,17 @@ export function AuthScreen({
   const clearFieldError = (field: keyof AuthFieldErrors) => {
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
     setFormError(null);
+  };
+
+  const showAlreadyRegistered = () => {
+    setAlreadyRegistered(true);
+    setFieldErrors((current) => ({
+      ...current,
+      email: "该邮箱已注册",
+    }));
+    setPassword("");
+    setConfirmPassword("");
+    setEmailShakeKey((current) => current + 1);
   };
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -124,7 +137,7 @@ export function AuthScreen({
       } else if (mode === "sign-up") {
         const result = await onSignUp(normalizedEmail, password);
         if (result.alreadyRegistered) {
-          setNotice("already-registered");
+          showAlreadyRegistered();
         } else if (result.needsEmailConfirmation) {
           setNotice("confirmation-sent");
           setResendCooldown(60);
@@ -144,7 +157,7 @@ export function AuthScreen({
         mode === "sign-up" &&
         (code === "user_already_exists" || code === "email_exists")
       ) {
-        setNotice("already-registered");
+        showAlreadyRegistered();
       } else {
         setFormError(getAuthErrorMessage(error, mode));
         setShowResendAction(mode === "sign-in" && code === "email_not_confirmed");
@@ -231,14 +244,12 @@ export function AuthScreen({
 
             {notice ? (
               <AccountNotice
-                notice={notice}
                 email={normalizeEmail(email)}
                 resending={resending}
                 resendCooldown={resendCooldown}
                 formError={formError}
                 onResend={resendConfirmation}
                 onSignIn={() => changeMode("sign-in")}
-                onForgotPassword={() => changeMode("forgot-password")}
               />
             ) : resetEmailSent ? (
               <StatusPanel
@@ -261,11 +272,16 @@ export function AuthScreen({
                   <EmailField
                     value={email}
                     error={fieldErrors.email}
+                    shake={alreadyRegistered}
+                    shakeKey={emailShakeKey}
+                    showForgotPassword={mode === "sign-up" && alreadyRegistered}
                     disabled={formDisabled}
                     onChange={(value) => {
                       setEmail(value);
+                      setAlreadyRegistered(false);
                       clearFieldError("email");
                     }}
+                    onForgotPassword={() => changeMode("forgot-password")}
                   />
                 )}
 
@@ -374,89 +390,102 @@ export function AuthScreen({
 type EmailFieldProps = {
   value: string;
   error?: string;
+  shake: boolean;
+  shakeKey: number;
+  showForgotPassword: boolean;
   disabled: boolean;
   onChange: (value: string) => void;
+  onForgotPassword: () => void;
 };
 
-function EmailField({ value, error, disabled, onChange }: EmailFieldProps) {
+function EmailField({
+  value,
+  error,
+  shake,
+  shakeKey,
+  showForgotPassword,
+  disabled,
+  onChange,
+  onForgotPassword,
+}: EmailFieldProps) {
   return (
-    <label className="block" htmlFor="auth-email">
-      <span className="mb-2 flex min-h-5 items-center gap-2 text-caption font-bold text-muted-foreground">
-        <Mail className="size-4" /> 邮箱
-      </span>
-      <input
-        id="auth-email"
-        type="email"
-        inputMode="email"
-        autoCapitalize="none"
-        autoComplete="email"
-        spellCheck={false}
-        required
-        value={value}
-        disabled={disabled}
-        aria-invalid={Boolean(error)}
-        aria-describedby={error ? "auth-email-error" : undefined}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="name@example.com"
-        className={`min-h-12 w-full rounded-control border bg-card px-4 text-base shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 disabled:opacity-45 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"}`}
-      />
-      {error && (
+    <div>
+      <label className="block" htmlFor="auth-email">
+        <span className="mb-2 flex min-h-5 items-center gap-2 text-caption font-bold text-muted-foreground">
+          <Mail className="size-4" /> 邮箱
+        </span>
+        <span
+          key={shakeKey}
+          className={shake ? "auth-email-shake block" : "block"}
+        >
+          <input
+            id="auth-email"
+            type="email"
+            inputMode="email"
+            autoCapitalize="none"
+            autoComplete="email"
+            spellCheck={false}
+            required
+            value={value}
+            disabled={disabled}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? "auth-email-error" : undefined}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="name@example.com"
+            className={`min-h-12 w-full rounded-control border bg-card px-4 text-base shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 disabled:opacity-45 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"}`}
+          />
+        </span>
+      </label>
+      {error && showForgotPassword ? (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="flex min-h-11 items-center justify-between gap-3"
+        >
+          <span
+            id="auth-email-error"
+            className="text-caption font-semibold text-destructive"
+          >
+            {error}
+          </span>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onForgotPassword}
+            className="flex min-h-11 shrink-0 items-center text-caption font-bold text-primary disabled:opacity-45"
+          >
+            忘记密码？
+          </button>
+        </div>
+      ) : error ? (
         <span
           id="auth-email-error"
           className="mt-1.5 block text-caption font-semibold text-destructive"
         >
           {error}
         </span>
-      )}
-    </label>
+      ) : null}
+    </div>
   );
 }
 
 type AccountNoticeProps = {
-  notice: Exclude<AuthNotice, null>;
   email: string;
   resending: boolean;
   resendCooldown: number;
   formError: string | null;
   onResend: () => void;
   onSignIn: () => void;
-  onForgotPassword: () => void;
 };
 
 function AccountNotice({
-  notice,
   email,
   resending,
   resendCooldown,
   formError,
   onResend,
   onSignIn,
-  onForgotPassword,
 }: AccountNoticeProps) {
-  if (notice === "already-registered") {
-    return (
-      <StatusPanel
-        icon={<UserRoundCheck className="size-6" />}
-        title="该邮箱已注册"
-        description="请直接登录；如果忘记密码，可以通过邮箱重置。"
-      >
-        <div className="mt-5 grid gap-3">
-          <Button type="button" onClick={onSignIn} className="w-full">
-            返回登录
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onForgotPassword}
-            className="w-full"
-          >
-            忘记密码
-          </Button>
-        </div>
-      </StatusPanel>
-    );
-  }
-
   return (
     <StatusPanel
       icon={<CircleCheck className="size-6" />}

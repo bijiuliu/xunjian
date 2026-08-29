@@ -176,6 +176,18 @@ select:focus {
 
 input { color: var(--input-foreground) !important; }
 
+@keyframes auth-email-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+.auth-email-shake {
+  animation: auth-email-shake 360ms ease-out;
+}
+
 
 
 select option:disabled { color: var(--muted-foreground); background: var(--muted); }

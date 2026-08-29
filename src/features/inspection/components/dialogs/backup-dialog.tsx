@@ -88,7 +88,7 @@ function BackupMenu({
           className="flex min-h-16 w-full items-center gap-3 rounded-control bg-secondary px-4 text-left text-secondary-foreground transition active:scale-[.98] disabled:cursor-default disabled:opacity-45"
         >
           <span className="grid size-11 shrink-0 place-items-center rounded-control bg-card text-primary shadow-card">
-            <Download size={19} />
+            <Upload size={19} />
           </span>
           <span className="min-w-0 flex-1">
             <b className="block text-card-title">导出备份</b>
@@ -104,7 +104,7 @@ function BackupMenu({
           className="flex min-h-16 w-full items-center gap-3 rounded-control bg-muted px-4 text-left text-foreground transition active:scale-[.98]"
         >
           <span className="grid size-11 shrink-0 place-items-center rounded-control bg-card text-primary shadow-card">
-            <Upload size={19} />
+            <Download size={19} />
           </span>
           <span>
             <b className="block text-card-title">导入备份</b>

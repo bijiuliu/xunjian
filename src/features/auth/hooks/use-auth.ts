@@ -128,6 +128,31 @@ export function useAuth() {
     setStatus("signed-in");
   };
 
+  const changePassword = async (
+    currentPassword: string,
+    newPassword: string,
+  ) => {
+    const supabase = getSupabaseClient();
+    if (!supabase) throw new Error("Supabase 尚未配置");
+
+    const email = user?.email;
+    if (!email) throw new Error("当前账号缺少邮箱，无法验证密码");
+
+    const { error: verificationError } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password: currentPassword,
+      });
+    if (verificationError) throw verificationError;
+
+    const { data, error } = await supabase.auth.updateUser({
+      password: newPassword,
+      current_password: currentPassword,
+    });
+    if (error) throw error;
+    setUser(data.user);
+  };
+
   const signOut = async () => {
     const supabase = getSupabaseClient();
     if (!supabase) return;
@@ -144,6 +169,7 @@ export function useAuth() {
     resendSignUpConfirmation,
     requestPasswordReset,
     updatePassword,
+    changePassword,
     signOut,
   };
 }

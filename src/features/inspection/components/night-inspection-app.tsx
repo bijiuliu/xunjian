@@ -1,18 +1,24 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Cloud,
   CloudOff,
   LoaderCircle,
-  LogOut,
   RefreshCw,
   Save,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  AccountDialog,
+  AvatarVisual,
+  useUserPreferences,
+} from "@/features/account";
 import { AuthScreen, useAuth } from "@/features/auth";
 import { INSPECTION_TABS } from "../model/config";
+import type { InspectionTab } from "../model/types";
 import {
   useInspectionController,
   type InspectionSyncStatus,
@@ -57,6 +63,8 @@ export function NightInspectionApp() {
       key={auth.user?.id ?? "local"}
       userId={auth.user?.id}
       email={auth.user?.email}
+      emailVerified={Boolean(auth.user?.email_confirmed_at)}
+      onChangePassword={auth.user ? auth.changePassword : undefined}
       onSignOut={auth.user ? auth.signOut : undefined}
     />
   );
@@ -65,21 +73,38 @@ export function NightInspectionApp() {
 type InspectionAppContentProps = {
   userId?: string;
   email?: string;
+  emailVerified: boolean;
+  onChangePassword?: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
   onSignOut?: () => Promise<void>;
 };
 
 function InspectionAppContent({
   userId,
   email,
+  emailVerified,
+  onChangePassword,
   onSignOut,
 }: InspectionAppContentProps) {
   const reduceMotion = useReducedMotion();
   const { state, actions } = useInspectionController(userId);
+  const preferences = useUserPreferences(userId);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const startupTabApplied = useRef(false);
+
+  useEffect(() => {
+    if (!preferences.ready || startupTabApplied.current) return;
+    startupTabApplied.current = true;
+    actions.selectTab(preferences.navigationOrder[0]);
+  }, [actions, preferences.navigationOrder, preferences.ready]);
 
   const signOut = async () => {
     if (!onSignOut) return;
     try {
       await onSignOut();
+      setAccountOpen(false);
       toast.success("已退出登录");
     } catch {
       toast.error("退出失败，请稍后重试");
@@ -134,23 +159,17 @@ function InspectionAppContent({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-3xl font-black tracking-tight">夜班巡检</h1>
-            {email && (
-              <p className="mt-1 truncate text-caption text-header-muted">
-                {email}
-              </p>
-            )}
           </div>
-          {onSignOut && (
-            <Button
+          {onSignOut && onChangePassword && email && (
+            <button
               type="button"
-              variant="inverse"
-              size="icon"
-              onClick={() => void signOut()}
-              aria-label="退出登录"
-              title="退出登录"
+              onClick={() => setAccountOpen(true)}
+              aria-label="打开账号"
+              title="账号"
+              className="size-11 shrink-0 rounded-full bg-border text-sm font-black text-muted-foreground shadow-card ring-1 ring-white/70 transition active:scale-[.97]"
             >
-              <LogOut />
-            </Button>
+              <AvatarVisual email={email} avatarUrl={preferences.avatarUrl} tone="header" />
+            </button>
           )}
         </div>
         <p className="mt-1 text-body text-header-muted">
@@ -179,7 +198,7 @@ function InspectionAppContent({
       </header>
 
       <nav className="sticky top-[max(0.75rem,env(safe-area-inset-top))] z-20 my-5 grid h-11 grid-cols-4 rounded-navigation bg-card/95 p-1 shadow-card ring-1 ring-inset ring-border/70 backdrop-blur">
-        {INSPECTION_TABS.map(([id, label]) => (
+        {preferences.navigationOrder.map((id) => (
           <button
             key={id}
             type="button"
@@ -187,7 +206,7 @@ function InspectionAppContent({
             onClick={() => actions.selectTab(id)}
             className={`segmented-item relative h-full rounded-navigation-item py-0 text-caption font-bold transition duration-200 before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] ${state.tab === id ? "bg-primary text-primary-foreground shadow-card" : "text-muted-foreground"}`}
           >
-            {label}
+            {TAB_LABELS[id]}
           </button>
         ))}
       </nav>
@@ -239,9 +258,31 @@ function InspectionAppContent({
           />
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {accountOpen && onChangePassword && onSignOut && email && (
+          <AccountDialog
+            email={email}
+            emailVerified={emailVerified}
+            avatarUrl={preferences.avatarUrl}
+            avatarBusy={preferences.avatarBusy}
+            navigationOrder={preferences.navigationOrder}
+            onAvatarChange={preferences.setAvatar}
+            onAvatarRemove={preferences.removeAvatar}
+            onNavigationOrderChange={preferences.setNavigationOrder}
+            onChangePassword={onChangePassword}
+            onSignOut={signOut}
+            onClose={() => setAccountOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }
+
+const TAB_LABELS = Object.fromEntries(INSPECTION_TABS) as Record<
+  InspectionTab,
+  string
+>;
 
 function SyncIcon({ status }: { status: InspectionSyncStatus }) {
   if (status === "syncing") return <RefreshCw className="size-4 animate-spin" />;

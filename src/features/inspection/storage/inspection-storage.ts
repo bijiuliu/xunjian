@@ -14,6 +14,12 @@ export const IMPORT_UNDO_STORAGE_KEY = "night-inspection-import-undo";
 export const STORAGE_OWNER_KEY = "night-inspection-owner";
 
 const ACCOUNT_CACHE_PREFIX = "night-inspection-account:";
+const IMPORT_UNDO_TTL_MS = 5 * 60 * 1000;
+
+export type ImportUndoSnapshot = {
+  records: InspectionRecord[];
+  expiresAt: number;
+};
 
 export type StoredInspectionState = {
   records: InspectionRecord[];
@@ -84,14 +90,17 @@ export function saveLastBackupAt(value: string) {
   localStorage.setItem(LAST_BACKUP_STORAGE_KEY, value);
 }
 
-export function saveImportUndo(records: InspectionRecord[]) {
+export function saveImportUndo(records: InspectionRecord[]): ImportUndoSnapshot {
+  const savedAt = new Date().toISOString();
+  const expiresAt = Date.parse(savedAt) + IMPORT_UNDO_TTL_MS;
   localStorage.setItem(
     IMPORT_UNDO_STORAGE_KEY,
-    JSON.stringify({ savedAt: new Date().toISOString(), records }),
+    JSON.stringify({ savedAt, expiresAt: new Date(expiresAt).toISOString(), records }),
   );
+  return { records, expiresAt };
 }
 
-export function loadImportUndo(): InspectionRecord[] | null {
+export function loadImportUndo(): ImportUndoSnapshot | null {
   try {
     const parsed = JSON.parse(
       localStorage.getItem(IMPORT_UNDO_STORAGE_KEY) || "null",
@@ -99,13 +108,32 @@ export function loadImportUndo(): InspectionRecord[] | null {
     if (
       parsed &&
       typeof parsed === "object" &&
+      "savedAt" in parsed &&
+      typeof parsed.savedAt === "string" &&
       "records" in parsed &&
       Array.isArray(parsed.records)
     ) {
-      return parsed.records.filter(isInspectionRecord);
+      const savedAt = Date.parse(parsed.savedAt);
+      const storedExpiresAt =
+        "expiresAt" in parsed && typeof parsed.expiresAt === "string"
+          ? Date.parse(parsed.expiresAt)
+          : Number.NaN;
+      const expiresAt = Number.isNaN(storedExpiresAt)
+        ? savedAt + IMPORT_UNDO_TTL_MS
+        : storedExpiresAt;
+
+      if (Number.isNaN(savedAt) || expiresAt <= Date.now()) {
+        clearImportUndo();
+        return null;
+      }
+
+      return {
+        records: parsed.records.filter(isInspectionRecord),
+        expiresAt,
+      };
     }
   } catch {
-    localStorage.removeItem(IMPORT_UNDO_STORAGE_KEY);
+    clearImportUndo();
   }
   return null;
 }

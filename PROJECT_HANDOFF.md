@@ -10,8 +10,8 @@
 - GitHub 仓库：<https://github.com/bijiuliu/xunjian>
 - GitHub Pages 目标地址：<https://bijiuliu.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
 - 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、Supabase Auth/Postgres、PWA manifest。
-- 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、邮箱验证、忘记密码、本地优先缓存和跨设备云同步。
-- 主导航顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；一级导航和皮带子导航会吸顶。
+- 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、邮箱验证、忘记密码、账号头像、本地优先缓存和跨设备云同步。
+- 主导航默认顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；用户可在账号面板拖动排序，第一项为启动页面并跨设备同步；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
 - 架构规范：`ARCHITECTURE.md`。
 
@@ -26,6 +26,7 @@ src/features/inspection/
 ├─ storage/inspection-storage.ts         # 唯一的 localStorage 访问层
 └─ sync/inspection-cloud-sync.ts         # Supabase 同步、软删除与离线队列
 src/features/auth/                       # 登录、注册、邮箱验证、密码恢复与会话状态
+src/features/account/                    # 账号面板、私有头像与导航偏好同步
 src/lib/supabase/client.ts               # 浏览器 Supabase 客户端
 supabase/migrations/                     # 数据表与 RLS 策略
 ```
@@ -133,6 +134,10 @@ supabase/migrations/                     # 数据表与 RLS 策略
 - 注册后提供邮箱验证状态与 60 秒重发冷却；已注册账号会在邮箱输入框抖动后显示行内提示和忘记密码入口，不使用易被误解为注册成功的完成页。
 - 登录未验证邮箱时可直接重发验证邮件；认证错误优先按 Supabase `error.code` 映射，不依赖英文错误文案。
 - 登录页忘记密码流程：发送 Supabase 重置邮件，邮件链接返回当前应用，收到 `PASSWORD_RECOVERY` 后设置并确认新密码。
+- 首页右上角为用户头像唯一入口；邮箱、修改密码和退出登录只放在账号面板，不在首页重复展示。账号内修改密码必须填写当前密码验证，邮件找回密码流程不受此限制。
+- 云同步状态仍只放首页顶部，备份恢复仍只放历史记录；不要在账号面板增加重复入口。
+- 导航排序由 `features/account` 管理并同步到 `user_preferences`；必须校验四个 tab 各出现一次，第一项作为启动页面。
+- 头像存放于私有 `avatars` bucket 的当前用户目录，使用一小时签名 URL；不要改成公开 bucket。
 
 ### 历史记录管理区
 
@@ -186,7 +191,7 @@ type InspectionRecord = {
 - 历史记录键：`night-inspection`，存储 `InspectionRecord[]`。
 - 草稿键：`night-inspection-draft`，当前格式为 `{ values, beltTab, updatedAt? }`。
 - 草稿读取必须兼容旧版只保存 `values` 对象的格式。
-- 所有读取、写入、清理 localStorage 的代码只能放在 `src/features/inspection/storage/inspection-storage.ts`；组件和领域模型不得直接访问 `localStorage`。
+- 巡检数据的 localStorage 访问只能放在 `src/features/inspection/storage/inspection-storage.ts`；账号偏好缓存只能放在 `src/features/account/storage/`，组件和领域模型不得直接访问 `localStorage`。
 - 修改字段 key、记录结构或存储键之前，必须先设计归一化/迁移并验证旧浏览器数据。
 - 未配置 Supabase 时，清理浏览器站点数据、换浏览器或换手机会丢失记录；配置并登录后可从云端恢复。
 - 第一个登录账号接管未归属账号的旧数据；同一浏览器中的不同账号使用隔离缓存。

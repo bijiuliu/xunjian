@@ -70,7 +70,9 @@ export function useInspectionController(userId?: string) {
   const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
   const [importPreview, setImportPreview] =
     useState<InspectionImportPreview | null>(null);
-  const [canUndoImport, setCanUndoImport] = useState(false);
+  const [importUndoExpiresAt, setImportUndoExpiresAt] = useState<number | null>(
+    null,
+  );
   const [syncStatus, setSyncStatus] = useState<InspectionSyncStatus>(
     userId ? "syncing" : "local",
   );
@@ -133,7 +135,7 @@ export function useInspectionController(userId?: string) {
       setValues(stored.values);
       setBeltTab(stored.beltTab);
       setLastBackupAt(loadLastBackupAt());
-      setCanUndoImport(Boolean(loadImportUndo()));
+      setImportUndoExpiresAt(loadImportUndo()?.expiresAt ?? null);
       if (userId) {
         await syncNow();
         if (!active) return;
@@ -146,6 +148,18 @@ export function useInspectionController(userId?: string) {
       window.clearTimeout(loadStorage);
     };
   }, [syncNow, userId]);
+
+  useEffect(() => {
+    if (importUndoExpiresAt === null) return;
+
+    const remaining = importUndoExpiresAt - Date.now();
+    const expiryTimer = window.setTimeout(() => {
+      clearImportUndo();
+      setImportUndoExpiresAt(null);
+    }, Math.max(0, remaining));
+
+    return () => window.clearTimeout(expiryTimer);
+  }, [importUndoExpiresAt]);
 
   useEffect(() => {
     if (!draftReady) return;
@@ -372,18 +386,19 @@ export function useInspectionController(userId?: string) {
   };
 
   const undoImport = () => {
-    const previousRecords = loadImportUndo();
-    if (!previousRecords) {
-      setCanUndoImport(false);
+    const undoSnapshot = loadImportUndo();
+    if (!undoSnapshot) {
+      setImportUndoExpiresAt(null);
       toast.error("可撤销的恢复数据已不存在");
       return;
     }
 
     try {
+      const previousRecords = undoSnapshot.records;
       persistRecords(previousRecords);
       setRecords(previousRecords);
       clearImportUndo();
-      setCanUndoImport(false);
+      setImportUndoExpiresAt(null);
       setSelectedRecord(null);
       setManageHistory(false);
       setSelectedRecordIds([]);
@@ -415,10 +430,10 @@ export function useInspectionController(userId?: string) {
         : sortInspectionRecords(importPreview.records);
 
     try {
-      saveImportUndo(records);
+      const undoSnapshot = saveImportUndo(records);
       persistRecords(next);
       setRecords(next);
-      setCanUndoImport(true);
+      setImportUndoExpiresAt(undoSnapshot.expiresAt);
       setSelectedRecord(null);
       setManageHistory(false);
       setSelectedRecordIds([]);
@@ -452,7 +467,7 @@ export function useInspectionController(userId?: string) {
       backupOpen,
       lastBackupAt,
       importPreview,
-      canUndoImport,
+      canUndoImport: importUndoExpiresAt !== null,
       syncStatus,
     },
     actions: {

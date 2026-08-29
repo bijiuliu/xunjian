@@ -192,7 +192,7 @@ export function AuthScreen({
   const formDisabled = submitting || resending;
 
   return (
-    <main className="mx-auto flex min-h-svh max-w-md items-center bg-background px-page py-[max(2rem,env(safe-area-inset-top))]">
+    <main className="mx-auto flex min-h-svh max-w-md items-start bg-background px-page py-[max(2rem,env(safe-area-inset-top))]">
       <div className="w-full">
         <div className="mb-7 text-center">
           <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-card bg-primary text-primary-foreground shadow-primary">
@@ -287,6 +287,7 @@ export function AuthScreen({
 
                 {mode !== "forgot-password" && (
                   <PasswordField
+                    key={`auth-password-${mode}`}
                     id="auth-password"
                     label={mode === "reset-password" ? "新密码" : "密码"}
                     autoComplete={
@@ -302,13 +303,13 @@ export function AuthScreen({
                       clearFieldError("password");
                     }}
                     placeholder="至少 8 位"
-                    labelAction={
+                    belowAction={
                       mode === "sign-in" ? (
                         <button
                           type="button"
                           disabled={formDisabled}
                           onClick={() => changeMode("forgot-password")}
-                          className="absolute -right-2 -top-3 flex min-h-11 items-center px-2 text-caption font-bold text-primary disabled:opacity-45"
+                          className="-mr-2 flex min-h-11 items-center px-2 text-caption font-bold text-primary disabled:opacity-45"
                         >
                           忘记密码？
                         </button>

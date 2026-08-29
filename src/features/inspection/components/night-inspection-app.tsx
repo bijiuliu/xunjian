@@ -35,8 +35,20 @@ export function NightInspectionApp() {
     );
   }
 
-  if (auth.configured && auth.status === "signed-out") {
-    return <AuthScreen onSignIn={auth.signIn} onSignUp={auth.signUp} />;
+  if (
+    auth.configured &&
+    (auth.status === "signed-out" || auth.status === "password-recovery")
+  ) {
+    return (
+      <AuthScreen
+        key={auth.status}
+        passwordRecovery={auth.status === "password-recovery"}
+        onSignIn={auth.signIn}
+        onSignUp={auth.signUp}
+        onRequestPasswordReset={auth.requestPasswordReset}
+        onUpdatePassword={auth.updatePassword}
+      />
+    );
   }
 
   return (

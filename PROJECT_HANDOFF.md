@@ -1,6 +1,6 @@
 # 夜班巡检项目交接文档
 
-> 更新日期：2026-08-28
+> 更新日期：2026-08-29
 > 用途：让新的 Codex 对话快速接手当前代码，避免重新梳理已确认的纸表规则、回退已撤销的交互，或破坏已有浏览器数据。
 
 ## 1. 当前状态（60 秒接手）
@@ -10,7 +10,7 @@
 - GitHub 仓库：<https://github.com/bijiuliu/xunjian>
 - GitHub Pages 目标地址：<https://bijiuliu.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
 - 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、Supabase Auth/Postgres、PWA manifest。
-- 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、本地优先缓存和跨设备云同步。
+- 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、忘记密码、本地优先缓存和跨设备云同步。
 - 主导航顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
 - 架构规范：`ARCHITECTURE.md`。
@@ -129,6 +129,7 @@ supabase/migrations/                     # 数据表与 RLS 策略
 - 历史列表、详情汇总、批量管理、二次确认、详情删除。
 - 汇总顺序：皮带区域 → 8#冲渣 → 9#冲渣。
 - PWA manifest、iPhone Safe Area、GitHub Pages 静态导出。
+- 登录页忘记密码流程：发送 Supabase 重置邮件，邮件链接返回当前应用，收到 `PASSWORD_RECOVERY` 后设置并确认新密码。
 
 ### 历史记录管理区
 

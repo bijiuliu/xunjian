@@ -83,6 +83,7 @@ export function AccountDialog(props: AccountDialogProps) {
       onClick={props.onClose}
     >
       <motion.div
+        layoutScroll
         role="dialog"
         aria-modal="true"
         aria-labelledby="account-dialog-title"
@@ -388,7 +389,9 @@ function NavigationReorderItem({
     longPressTimer.current = window.setTimeout(() => {
       longPressTimer.current = null;
       setDragging(true);
-      dragControls.start(event);
+      dragControls.start(event, {
+        distanceThreshold: 0,
+      });
       navigator.vibrate?.(8);
     }, 350);
   };
@@ -409,7 +412,7 @@ function NavigationReorderItem({
         setDragging(false);
         onCommit();
       }}
-      whileDrag={{ y: -4, scale: 1.02 }}
+      whileDrag={{ scale: 1.02 }}
       transition={{ type: "spring", stiffness: 460, damping: 34 }}
       className={`flex min-h-12 touch-pan-y select-none items-center gap-1 rounded-control px-2 pr-4 transition-colors ${
         dragging

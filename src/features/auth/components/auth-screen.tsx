@@ -149,7 +149,7 @@ export function AuthScreen({
         setResetEmailSent(true);
       } else {
         await onUpdatePassword(password);
-        toast.success("密码已更新");
+        toast.success("密码已更新，其他设备已退出");
       }
     } catch (error) {
       const code = getAuthErrorCode(error);

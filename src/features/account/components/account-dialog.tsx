@@ -194,10 +194,10 @@ function ConfirmationSheet({
         aria-modal="true"
         aria-labelledby="account-confirmation-title"
         className="w-full max-w-sm rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
-        initial={{ y: 20, opacity: 0.8, scale: 0.98 }}
-        animate={{ y: 0, opacity: 1, scale: 1 }}
-        exit={{ y: 20, opacity: 0, scale: 0.98 }}
-        transition={{ type: "spring", stiffness: 460, damping: 34 }}
+        initial={{ y: "120%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "120%" }}
+        transition={{ type: "spring", stiffness: 420, damping: 36 }}
         onClick={(event) => event.stopPropagation()}
       >
         <h3

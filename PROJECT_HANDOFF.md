@@ -1,6 +1,6 @@
 # 夜班巡检项目交接文档
 
-> 更新日期：2026-08-29
+> 更新日期：2026-08-30
 > 用途：让新的 Codex 对话快速接手当前代码，避免重新梳理已确认的纸表规则、回退已撤销的交互，或破坏已有浏览器数据。
 
 ## 1. 当前状态（60 秒接手）
@@ -11,6 +11,7 @@
 - GitHub Pages 目标地址：<https://bijiuliu.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
 - 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、Supabase Auth/Postgres、PWA manifest。
 - 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、邮箱验证、忘记密码、账号头像、本地优先缓存和跨设备云同步。
+- 当前密码安全策略：账号内改密和邮件找回重设密码后保留当前设备登录，撤销其他设备会话；在线设备通过 Realtime 及时退出，离线或后台设备在恢复联网或回到前台时退出。
 - 主导航默认顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；用户可在账号面板拖动排序，第一项为启动页面并跨设备同步；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
 - 架构规范：`ARCHITECTURE.md`。
@@ -134,6 +135,7 @@ supabase/migrations/                     # 数据表与 RLS 策略
 - 注册后提供邮箱验证状态与 60 秒重发冷却；已注册账号会在邮箱输入框抖动后显示行内提示和忘记密码入口，不使用易被误解为注册成功的完成页。
 - 登录未验证邮箱时可直接重发验证邮件；认证错误优先按 Supabase `error.code` 映射，不依赖英文错误文案。
 - 登录页忘记密码流程：发送 Supabase 重置邮件，邮件链接返回当前应用，收到 `PASSWORD_RECOVERY` 后设置并确认新密码。
+- 修改密码成功后调用 Supabase Auth 的 `signOut({ scope: "others" })` 撤销其他刷新会话，并写入 Realtime 撤销标记；当前设备保持登录，其他设备执行本地登出。
 - 首页右上角为用户头像唯一入口；邮箱、修改密码和退出登录只放在账号面板，不在首页重复展示。账号内修改密码必须填写当前密码验证，邮件找回密码流程不受此限制。
 - 云同步状态仍只放首页顶部，备份恢复仍只放历史记录；不要在账号面板增加重复入口。
 - 导航排序由 `features/account` 管理并同步到 `user_preferences`；必须校验四个 tab 各出现一次，第一项作为启动页面。
@@ -196,6 +198,8 @@ type InspectionRecord = {
 - 未配置 Supabase 时，清理浏览器站点数据、换浏览器或换手机会丢失记录；配置并登录后可从云端恢复。
 - 第一个登录账号接管未归属账号的旧数据；同一浏览器中的不同账号使用隔离缓存。
 - 云端表使用 RLS 按 `auth.uid() = user_id` 隔离；记录采用软删除，草稿按更新时间解决冲突。
+- 跨设备会话撤销复用 `user_preferences`：`sessions_revoked_at` 记录撤销时间，`sessions_revoked_by` 记录发起会话 ID；当前会话据此保持登录，其他会话退出。
+- 仓库迁移文件为 `supabase/migrations/20260830040000_session_revocation_realtime.sql`；生产 Supabase 已执行并登记为 `20260830110531_session_revocation_realtime`。该迁移只新增两个可空字段并把 `user_preferences` 加入 `supabase_realtime` publication，不改动现有用户、巡检、头像或导航数据。
 - 当前只有 manifest，没有可靠 Service Worker 离线缓存；不要宣称“完全离线”。
 
 ## 6. 架构与部署约束
@@ -232,7 +236,7 @@ allowedDevOrigins: ["127.0.0.1", "localhost"]
 
 1. 快速连续点击一级导航时，选中标签和内容偶尔错位。根因与带退出等待的 `AnimatePresence mode="wait"` 有关；不能简单删除动画，必须同时保留细腻切换体验。
 2. 一级板块切换及保存/删除 Dialog 尚未完整遵从“减少动态效果”。
-3. Supabase 真机联调依赖项目环境变量、迁移 SQL 和 Authentication URL 配置；仓库本身不包含这些凭据。
+3. 生产 Supabase 已完成当前全部迁移；新建或更换 Supabase 项目时仍需按文件名顺序执行 `supabase/migrations/`，并配置环境变量和 Authentication URL。仓库本身不包含凭据。
 4. PWA manifest 不等于完整离线能力，尚未实现 Service Worker 静态资源缓存。
 
 ### 尚未实现
@@ -257,7 +261,7 @@ $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```
 
-本次完成模块化重构和历史管理渐隐效果后，上述三项均已通过。
+截至 2026-08-30，跨设备会话撤销改动已通过 `npm run lint`、`npx tsc --noEmit` 和 GitHub Pages 生产构建。
 
 涉及交互时至少手工检查：
 
@@ -269,6 +273,7 @@ npm run build
 - 历史列表到详情及返回方向正确；详情底部操作栏始终相对视口稳定。
 - 历史管理模式下，删除区为列表内吸底；末张卡片只在靠近删除区时轻微渐隐，删除按钮不遮挡或抢占卡片点击。
 - GitHub Pages 构建时 `/xunjian` 子路径资源正确。
+- 两台设备登录同一账号，在其中一台修改密码后，当前设备保持登录；另一台在线时及时退出，离线或后台时在恢复联网/回到前台后退出。
 
 ## 9. 新对话直接粘贴
 

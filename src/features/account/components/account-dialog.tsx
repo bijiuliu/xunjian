@@ -52,6 +52,8 @@ export function AccountDialog(props: AccountDialogProps) {
   const [passwordOpen, setPasswordOpen] = useState(false);
 
   useEffect(() => {
+    if (!isPresent) return;
+
     const scrollY = window.scrollY;
     const bodyStyle = document.body.style;
     const previousStyles = {
@@ -79,7 +81,7 @@ export function AccountDialog(props: AccountDialogProps) {
       bodyStyle.overflow = previousStyles.overflow;
       window.scrollTo(0, scrollY);
     };
-  }, []);
+  }, [isPresent]);
 
   const confirmAction = async () => {
     if (!confirmation) return;

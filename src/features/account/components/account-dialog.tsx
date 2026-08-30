@@ -562,7 +562,7 @@ function PasswordSheet({
     setError(null);
     try {
       await onChangePassword(currentPassword, password);
-      toast.success("密码已修改");
+      toast.success("密码已修改，其他设备已退出");
       onClose();
     } catch (caught) {
       setError(getChangePasswordError(caught));

@@ -8,8 +8,11 @@ import {
   type UserPreferences,
 } from "../model/user-preferences";
 import {
+  clearCachedAvatarUrl,
   getInitialUserPreferences,
+  loadCachedAvatarUrl,
   loadCachedUserPreferences,
+  saveCachedAvatarUrl,
   saveCachedUserPreferences,
 } from "../storage/user-preferences-storage";
 import {
@@ -24,31 +27,47 @@ export function useUserPreferences(userId?: string) {
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
     userId ? getInitialUserPreferences(userId) : createDefaultPreferences(),
   );
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() =>
+    userId ? loadCachedAvatarUrl(userId, preferences.avatarPath) : null,
+  );
   const [ready, setReady] = useState(!userId);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  const avatarPathRef = useRef<string | null>(null);
+  const avatarPathRef = useRef<string | null>(
+    avatarUrl ? preferences.avatarPath : null,
+  );
 
-  const refreshAvatarUrl = useCallback(async (path: string | null) => {
-    if (!path) {
-      avatarPathRef.current = null;
-      setAvatarUrl(null);
-      return;
-    }
+  const refreshAvatarUrl = useCallback(
+    async (path: string | null) => {
+      if (!path) {
+        avatarPathRef.current = null;
+        if (userId) clearCachedAvatarUrl(userId);
+        setAvatarUrl(null);
+        return;
+      }
 
-    // Re-use the existing signed URL while the avatar object is unchanged.
-    // This avoids a visible image reload whenever the app returns to the foreground.
-    if (avatarPathRef.current === path) return;
+      // Re-use the existing signed URL while the avatar object is unchanged.
+      // The browser-local cache also survives a page refresh until the URL nears expiry.
+      if (avatarPathRef.current === path) return;
 
-    try {
-      const signedUrl = await createAvatarUrl(path);
-      avatarPathRef.current = path;
-      setAvatarUrl(signedUrl);
-    } catch {
-      avatarPathRef.current = null;
-      setAvatarUrl(null);
-    }
-  }, []);
+      const cachedUrl = userId ? loadCachedAvatarUrl(userId, path) : null;
+      if (cachedUrl) {
+        avatarPathRef.current = path;
+        setAvatarUrl(cachedUrl);
+        return;
+      }
+
+      try {
+        const signedUrl = await createAvatarUrl(path);
+        avatarPathRef.current = path;
+        if (userId) saveCachedAvatarUrl(userId, path, signedUrl);
+        setAvatarUrl(signedUrl);
+      } catch {
+        avatarPathRef.current = null;
+        setAvatarUrl(null);
+      }
+    },
+    [userId],
+  );
 
   const syncPreferences = useCallback(async () => {
     if (!userId) return;
@@ -186,6 +205,8 @@ export function useUserPreferences(userId?: string) {
       await pushCloudUserPreferences(userId, next);
       saveCachedUserPreferences(userId, { ...next, pending: false });
       setPreferences(next);
+      avatarPathRef.current = null;
+      clearCachedAvatarUrl(userId);
       setAvatarUrl(null);
       await deleteAvatar(previousPath);
     } finally {

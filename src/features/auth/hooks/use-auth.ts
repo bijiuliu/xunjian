@@ -123,6 +123,10 @@ export function useAuth() {
     if (!supabase) throw new Error("Supabase 尚未配置");
     const { data, error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
+    const { error: signOutError } = await supabase.auth.signOut({
+      scope: "others",
+    });
+    if (signOutError) throw signOutError;
     passwordRecovery.current = false;
     setUser(data.user);
     setStatus("signed-in");
@@ -150,6 +154,10 @@ export function useAuth() {
       current_password: currentPassword,
     });
     if (error) throw error;
+    const { error: signOutError } = await supabase.auth.signOut({
+      scope: "others",
+    });
+    if (signOutError) throw signOutError;
     setUser(data.user);
   };
 

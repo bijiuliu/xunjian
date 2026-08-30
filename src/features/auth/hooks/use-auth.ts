@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { User } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import {
   getSupabaseClient,
   isSupabaseConfigured,
@@ -21,6 +21,7 @@ export function useAuth() {
   );
   const [user, setUser] = useState<User | null>(null);
   const passwordRecovery = useRef(false);
+  const userId = user?.id;
 
   useEffect(() => {
     const supabase = getSupabaseClient();
@@ -70,6 +71,53 @@ export function useAuth() {
       data.subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    const supabase = getSupabaseClient();
+    if (!supabase || !userId) return;
+
+    let signingOut = false;
+    const enforceRevocation = async (value?: unknown) => {
+      if (signingOut) return;
+      try {
+        if (!(await isCurrentSessionRevoked(supabase, userId, value))) return;
+        signingOut = true;
+        await supabase.auth.signOut({ scope: "local" });
+      } catch {
+        // Retry when the app returns online or becomes visible again.
+      } finally {
+        signingOut = false;
+      }
+    };
+
+    const channel = supabase
+      .channel(`session-revocation:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "user_preferences",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => void enforceRevocation(payload.new),
+      )
+      .subscribe();
+
+    void enforceRevocation();
+    const handleOnline = () => void enforceRevocation();
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void enforceRevocation();
+    };
+    window.addEventListener("online", handleOnline);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      void supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
   const signIn = async (email: string, password: string) => {
     const supabase = getSupabaseClient();
@@ -123,10 +171,7 @@ export function useAuth() {
     if (!supabase) throw new Error("Supabase 尚未配置");
     const { data, error } = await supabase.auth.updateUser({ password });
     if (error) throw error;
-    const { error: signOutError } = await supabase.auth.signOut({
-      scope: "others",
-    });
-    if (signOutError) throw signOutError;
+    await revokeOtherSessions(supabase, data.user.id);
     passwordRecovery.current = false;
     setUser(data.user);
     setStatus("signed-in");
@@ -154,10 +199,7 @@ export function useAuth() {
       current_password: currentPassword,
     });
     if (error) throw error;
-    const { error: signOutError } = await supabase.auth.signOut({
-      scope: "others",
-    });
-    if (signOutError) throw signOutError;
+    await revokeOtherSessions(supabase, data.user.id);
     setUser(data.user);
   };
 
@@ -180,6 +222,80 @@ export function useAuth() {
     changePassword,
     signOut,
   };
+}
+
+type SessionRevocationMarker = {
+  sessions_revoked_at: string;
+  sessions_revoked_by: string;
+};
+
+async function revokeOtherSessions(
+  supabase: SupabaseClient,
+  userId: string,
+) {
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  if (claimsError) throw claimsError;
+  const sessionId = claimsData?.claims.session_id;
+  if (!sessionId) throw new Error("无法识别当前登录会话");
+
+  const { error: signOutError } = await supabase.auth.signOut({
+    scope: "others",
+  });
+  if (signOutError) throw signOutError;
+
+  const { error: markerError } = await supabase
+    .from("user_preferences")
+    .upsert(
+      {
+        user_id: userId,
+        sessions_revoked_at: new Date().toISOString(),
+        sessions_revoked_by: sessionId,
+      },
+      { onConflict: "user_id" },
+    );
+  if (markerError) throw markerError;
+}
+
+async function isCurrentSessionRevoked(
+  supabase: SupabaseClient,
+  userId: string,
+  value?: unknown,
+) {
+  let marker = parseSessionRevocationMarker(value);
+  if (!marker) {
+    const { data, error } = await supabase
+      .from("user_preferences")
+      .select("sessions_revoked_at, sessions_revoked_by")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) throw error;
+    marker = parseSessionRevocationMarker(data);
+  }
+  if (!marker) return false;
+
+  const { data: claimsData, error: claimsError } =
+    await supabase.auth.getClaims();
+  if (claimsError) throw claimsError;
+  const claims = claimsData?.claims;
+  if (!claims || marker.sessions_revoked_by === claims.session_id) return false;
+
+  return claims.iat * 1000 < Date.parse(marker.sessions_revoked_at);
+}
+
+function parseSessionRevocationMarker(
+  value: unknown,
+): SessionRevocationMarker | null {
+  if (!value || typeof value !== "object") return null;
+  const marker = value as Partial<SessionRevocationMarker>;
+  if (
+    typeof marker.sessions_revoked_at !== "string" ||
+    Number.isNaN(Date.parse(marker.sessions_revoked_at)) ||
+    typeof marker.sessions_revoked_by !== "string"
+  ) {
+    return null;
+  }
+  return marker as SessionRevocationMarker;
 }
 
 function getCurrentAppUrl() {

@@ -289,14 +289,21 @@ function AccountMenu({
 
   return (
     <>
-      <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-3 flex items-center justify-between border-b border-border/60 bg-card px-5 py-3 shadow-card">
+      <div className="pointer-events-none sticky top-0 z-20 flex items-center justify-between px-1 pb-3">
         <div>
           <h3 id="account-dialog-title" className="text-lg font-black text-foreground-strong">
             账号
           </h3>
           <p className="mt-0.5 text-caption text-muted-foreground">个人资料与使用偏好</p>
         </div>
-        <Button type="button" variant="ghost" size="icon" onClick={onClose} aria-label="关闭账号面板">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          aria-label="关闭账号面板"
+          className="pointer-events-auto"
+        >
           <X />
         </Button>
       </div>

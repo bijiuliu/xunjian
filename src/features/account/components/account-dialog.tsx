@@ -406,7 +406,9 @@ function NavigationReorderItem({
   onCommit: () => void;
 }) {
   const dragControls = useDragControls();
+  const handleRef = useRef<HTMLButtonElement>(null);
   const longPressTimer = useRef<number | null>(null);
+  const draggingRef = useRef(false);
   const pressStart = useRef<{
     pointerId: number;
     x: number;
@@ -421,7 +423,23 @@ function NavigationReorderItem({
     }
   };
 
-  useEffect(() => clearLongPress, []);
+  useEffect(() => {
+    const handle = handleRef.current;
+    if (!handle) return clearLongPress;
+
+    const preventScrollAfterActivation = (event: TouchEvent) => {
+      if (draggingRef.current) event.preventDefault();
+    };
+
+    handle.addEventListener("touchmove", preventScrollAfterActivation, {
+      passive: false,
+    });
+
+    return () => {
+      clearLongPress();
+      handle.removeEventListener("touchmove", preventScrollAfterActivation);
+    };
+  }, []);
 
   const startLongPress = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -434,6 +452,7 @@ function NavigationReorderItem({
     longPressTimer.current = window.setTimeout(() => {
       longPressTimer.current = null;
       pressStart.current = null;
+      draggingRef.current = true;
       setDragging(true);
       dragControls.start(event, {
         distanceThreshold: 0,
@@ -457,7 +476,8 @@ function NavigationReorderItem({
   const finishLongPress = () => {
     clearLongPress();
     pressStart.current = null;
-    if (!dragging) return;
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
     setDragging(false);
   };
 
@@ -466,8 +486,12 @@ function NavigationReorderItem({
       value={tab}
       dragListener={false}
       dragControls={dragControls}
-      onDragStart={() => setDragging(true)}
+      onDragStart={() => {
+        draggingRef.current = true;
+        setDragging(true);
+      }}
       onDragEnd={() => {
+        draggingRef.current = false;
         setDragging(false);
         onCommit();
       }}
@@ -480,6 +504,7 @@ function NavigationReorderItem({
       }`}
     >
       <button
+        ref={handleRef}
         type="button"
         aria-label={`长按移动${TAB_LABELS[tab]}`}
         onPointerDown={startLongPress}

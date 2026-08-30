@@ -48,37 +48,6 @@ type ConfirmationAction = "remove-avatar" | "sign-out";
 
 export function AccountDialog(props: AccountDialogProps) {
   const isPresent = useIsPresent();
-
-  return (
-    <motion.div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-overlay px-page pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]"
-      style={{ pointerEvents: isPresent ? "auto" : "none" }}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={props.onClose}
-    >
-      <motion.div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="account-dialog-title"
-        aria-hidden={!isPresent}
-        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
-        style={{ pointerEvents: isPresent ? "auto" : "none" }}
-        initial={{ y: 40, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        exit={{ y: 40, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 420, damping: 34 }}
-        onClick={(event) => event.stopPropagation()}
-      >
-        <AccountPanel {...props} />
-      </motion.div>
-    </motion.div>
-  );
-}
-
-function AccountPanel(props: AccountDialogProps) {
-  const [panel, setPanel] = useState<"account" | "password">("account");
   const [confirmation, setConfirmation] = useState<ConfirmationAction | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -104,16 +73,56 @@ function AccountPanel(props: AccountDialogProps) {
     }
   };
 
-  if (confirmation) {
-    return (
-      <ConfirmationPanel
-        action={confirmation}
-        submitting={confirming}
-        onCancel={() => setConfirmation(null)}
-        onConfirm={() => void confirmAction()}
-      />
-    );
-  }
+  return (
+    <motion.div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-overlay px-page pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-[2px]"
+      style={{ pointerEvents: isPresent ? "auto" : "none" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={props.onClose}
+    >
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-dialog-title"
+        aria-hidden={!isPresent}
+        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+        style={{ pointerEvents: isPresent ? "auto" : "none" }}
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 40, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 420, damping: 34 }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <AccountPanel
+          {...props}
+          onRequestAvatarRemoval={() => setConfirmation("remove-avatar")}
+          onRequestSignOut={() => setConfirmation("sign-out")}
+        />
+      </motion.div>
+
+      <AnimatePresence>
+        {confirmation && (
+          <ConfirmationSheet
+            action={confirmation}
+            submitting={confirming}
+            onCancel={() => setConfirmation(null)}
+            onConfirm={() => void confirmAction()}
+          />
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function AccountPanel(
+  props: AccountDialogProps & {
+    onRequestAvatarRemoval: () => void;
+    onRequestSignOut: () => void;
+  },
+) {
+  const [panel, setPanel] = useState<"account" | "password">("account");
 
   return panel === "password" ? (
     <PasswordPanel
@@ -121,16 +130,11 @@ function AccountPanel(props: AccountDialogProps) {
       onBack={() => setPanel("account")}
     />
   ) : (
-    <AccountMenu
-      {...props}
-      onOpenPassword={() => setPanel("password")}
-      onRequestAvatarRemoval={() => setConfirmation("remove-avatar")}
-      onRequestSignOut={() => setConfirmation("sign-out")}
-    />
+    <AccountMenu {...props} onOpenPassword={() => setPanel("password")} />
   );
 }
 
-function ConfirmationPanel({
+function ConfirmationSheet({
   action,
   submitting,
   onCancel,
@@ -144,47 +148,64 @@ function ConfirmationPanel({
   const isAvatarRemoval = action === "remove-avatar";
 
   return (
-    <>
-      <div className="px-1 pb-4">
-        <h3 id="account-dialog-title" className="text-lg font-black text-foreground-strong">
+    <motion.div
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-overlay/35 px-page pb-[max(1rem,env(safe-area-inset-bottom))]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      onClick={(event) => {
+        event.stopPropagation();
+        if (!submitting) onCancel();
+      }}
+    >
+      <motion.div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="account-confirmation-title"
+        className="w-full max-w-sm rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+        initial={{ y: 20, opacity: 0.8, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 20, opacity: 0, scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 460, damping: 34 }}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3
+          id="account-confirmation-title"
+          className="text-card-title font-black text-foreground-strong"
+        >
           {isAvatarRemoval ? "确认移除头像" : "确认退出登录"}
         </h3>
-        <p className="mt-1 text-caption text-muted-foreground">
+        <p className="mt-2 text-caption text-muted-foreground">
           {isAvatarRemoval
             ? "移除后将恢复为默认头像。"
             : "退出后需要再次输入账号和密码才能使用云端同步。"}
         </p>
-      </div>
-      <div className="rounded-card bg-muted p-4">
-        <p className="font-bold text-foreground">
-          {isAvatarRemoval ? "确定要移除当前头像吗？" : "确定要退出当前账号吗？"}
-        </p>
-      </div>
-      <div className="mt-5 flex gap-3">
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={submitting}
-          onClick={onCancel}
-          className="flex-1"
-        >
-          取消
-        </Button>
-        <Button
-          type="button"
-          variant="destructive"
-          disabled={submitting}
-          onClick={onConfirm}
-          className="flex-1"
-        >
-          {submitting
-            ? "正在处理…"
-            : isAvatarRemoval
-              ? "移除头像"
-              : "退出登录"}
-        </Button>
-      </div>
-    </>
+        <div className="mt-4 flex gap-3">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={submitting}
+            onClick={onCancel}
+            className="flex-1"
+          >
+            取消
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={submitting}
+            onClick={onConfirm}
+            className="flex-1"
+          >
+            {submitting
+              ? "正在处理…"
+              : isAvatarRemoval
+                ? "移除头像"
+                : "退出登录"}
+          </Button>
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

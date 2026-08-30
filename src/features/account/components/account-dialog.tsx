@@ -407,6 +407,11 @@ function NavigationReorderItem({
 }) {
   const dragControls = useDragControls();
   const longPressTimer = useRef<number | null>(null);
+  const pressStart = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const [dragging, setDragging] = useState(false);
 
   const clearLongPress = () => {
@@ -421,8 +426,14 @@ function NavigationReorderItem({
   const startLongPress = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     clearLongPress();
+    pressStart.current = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+    };
     longPressTimer.current = window.setTimeout(() => {
       longPressTimer.current = null;
+      pressStart.current = null;
       setDragging(true);
       dragControls.start(event, {
         distanceThreshold: 0,
@@ -431,8 +442,21 @@ function NavigationReorderItem({
     }, 350);
   };
 
+  const moveLongPress = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = pressStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+
+    const x = event.clientX - start.x;
+    const y = event.clientY - start.y;
+    if (Math.hypot(x, y) <= 8) return;
+
+    clearLongPress();
+    pressStart.current = null;
+  };
+
   const finishLongPress = () => {
     clearLongPress();
+    pressStart.current = null;
     if (!dragging) return;
     setDragging(false);
   };
@@ -459,10 +483,13 @@ function NavigationReorderItem({
         type="button"
         aria-label={`长按移动${TAB_LABELS[tab]}`}
         onPointerDown={startLongPress}
+        onPointerMove={moveLongPress}
         onPointerUp={finishLongPress}
         onPointerCancel={finishLongPress}
         onContextMenu={(event) => event.preventDefault()}
-        className="grid size-10 shrink-0 touch-none place-items-center rounded-small text-subtle-foreground active:bg-border/60"
+        className={`grid size-10 shrink-0 place-items-center rounded-small text-subtle-foreground active:bg-border/60 ${
+          dragging ? "touch-none" : "touch-pan-y"
+        }`}
       >
         <GripVertical className="size-5" />
       </button>

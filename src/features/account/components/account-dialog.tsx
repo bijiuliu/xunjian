@@ -289,7 +289,7 @@ function AccountMenu({
 
   return (
     <>
-      <div className="flex items-center justify-between px-1 pb-3">
+      <div className="sticky top-0 z-20 -mx-4 -mt-4 mb-3 flex items-center justify-between border-b border-border/60 bg-card px-5 py-3 shadow-card">
         <div>
           <h3 id="account-dialog-title" className="text-lg font-black text-foreground-strong">
             账号

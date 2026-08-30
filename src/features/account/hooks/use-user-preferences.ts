@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { InspectionTab } from "@/features/inspection/model/types";
 import {
   createDefaultPreferences,
@@ -27,15 +27,25 @@ export function useUserPreferences(userId?: string) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [ready, setReady] = useState(!userId);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarPathRef = useRef<string | null>(null);
 
   const refreshAvatarUrl = useCallback(async (path: string | null) => {
     if (!path) {
+      avatarPathRef.current = null;
       setAvatarUrl(null);
       return;
     }
+
+    // Re-use the existing signed URL while the avatar object is unchanged.
+    // This avoids a visible image reload whenever the app returns to the foreground.
+    if (avatarPathRef.current === path) return;
+
     try {
-      setAvatarUrl(await createAvatarUrl(path));
+      const signedUrl = await createAvatarUrl(path);
+      avatarPathRef.current = path;
+      setAvatarUrl(signedUrl);
     } catch {
+      avatarPathRef.current = null;
       setAvatarUrl(null);
     }
   }, []);

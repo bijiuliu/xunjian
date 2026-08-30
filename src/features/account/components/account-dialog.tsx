@@ -289,13 +289,7 @@ function AccountMenu({
 
   return (
     <>
-      <div className="pointer-events-none sticky top-0 z-20 flex items-center justify-between px-1 pb-3">
-        <div>
-          <h3 id="account-dialog-title" className="text-lg font-black text-foreground-strong">
-            账号
-          </h3>
-          <p className="mt-0.5 text-caption text-muted-foreground">个人资料与使用偏好</p>
-        </div>
+      <div className="pointer-events-none sticky top-0 z-20 flex h-0 justify-end px-1">
         <Button
           type="button"
           variant="ghost"
@@ -306,6 +300,12 @@ function AccountMenu({
         >
           <X />
         </Button>
+      </div>
+      <div className="px-1 pb-3">
+        <h3 id="account-dialog-title" className="text-lg font-black text-foreground-strong">
+          账号
+        </h3>
+        <p className="mt-0.5 text-caption text-muted-foreground">个人资料与使用偏好</p>
       </div>
 
       <section className="rounded-card bg-muted p-4 text-center">

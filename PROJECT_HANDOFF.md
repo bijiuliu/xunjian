@@ -261,7 +261,7 @@ $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```
 
-截至 2026-08-30，跨设备会话撤销改动已通过 `npm run lint`、`npx tsc --noEmit` 和 GitHub Pages 生产构建。
+截至 2026-08-30，跨设备会话撤销改动已通过 `npm run lint`、`npx tsc --noEmit` 和生产构建。
 
 涉及交互时至少手工检查：
 

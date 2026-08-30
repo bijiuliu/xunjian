@@ -176,11 +176,13 @@ function ConfirmationSheet({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const isPresent = useIsPresent();
   const isAvatarRemoval = action === "remove-avatar";
 
   return (
     <motion.div
       className="fixed inset-0 z-[60] flex items-end justify-center bg-overlay/35 px-page pb-[max(1rem,env(safe-area-inset-bottom))]"
+      style={{ pointerEvents: isPresent ? "auto" : "none" }}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
@@ -193,7 +195,9 @@ function ConfirmationSheet({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="account-confirmation-title"
+        aria-hidden={!isPresent}
         className="w-full max-w-sm rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+        style={{ pointerEvents: isPresent ? "auto" : "none" }}
         initial={{ y: 20, opacity: 0.8, scale: 0.98 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
         exit={{ y: 20, opacity: 0, scale: 0.98 }}
@@ -215,7 +219,7 @@ function ConfirmationSheet({
           <Button
             type="button"
             variant="ghost"
-            disabled={submitting}
+            disabled={submitting || !isPresent}
             onClick={onCancel}
             className="flex-1"
           >
@@ -224,7 +228,7 @@ function ConfirmationSheet({
           <Button
             type="button"
             variant="destructive"
-            disabled={submitting}
+            disabled={submitting || !isPresent}
             onClick={onConfirm}
             className="flex-1"
           >

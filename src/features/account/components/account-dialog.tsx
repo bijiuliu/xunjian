@@ -44,6 +44,8 @@ const TAB_LABELS = Object.fromEntries(INSPECTION_TABS) as Record<
   string
 >;
 
+type ConfirmationAction = "remove-avatar" | "sign-out";
+
 export function AccountDialog(props: AccountDialogProps) {
   const isPresent = useIsPresent();
 
@@ -77,6 +79,41 @@ export function AccountDialog(props: AccountDialogProps) {
 
 function AccountPanel(props: AccountDialogProps) {
   const [panel, setPanel] = useState<"account" | "password">("account");
+  const [confirmation, setConfirmation] = useState<ConfirmationAction | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  const confirmAction = async () => {
+    if (!confirmation) return;
+    setConfirming(true);
+    try {
+      if (confirmation === "remove-avatar") {
+        await props.onAvatarRemove();
+        toast.success("头像已移除");
+        setConfirmation(null);
+      } else {
+        await props.onSignOut();
+      }
+    } catch {
+      toast.error(
+        confirmation === "remove-avatar"
+          ? "头像移除失败，请稍后重试"
+          : "退出登录失败，请稍后重试",
+      );
+    } finally {
+      setConfirming(false);
+    }
+  };
+
+  if (confirmation) {
+    return (
+      <ConfirmationPanel
+        action={confirmation}
+        submitting={confirming}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => void confirmAction()}
+      />
+    );
+  }
 
   return panel === "password" ? (
     <PasswordPanel
@@ -84,7 +121,70 @@ function AccountPanel(props: AccountDialogProps) {
       onBack={() => setPanel("account")}
     />
   ) : (
-    <AccountMenu {...props} onOpenPassword={() => setPanel("password")} />
+    <AccountMenu
+      {...props}
+      onOpenPassword={() => setPanel("password")}
+      onRequestAvatarRemoval={() => setConfirmation("remove-avatar")}
+      onRequestSignOut={() => setConfirmation("sign-out")}
+    />
+  );
+}
+
+function ConfirmationPanel({
+  action,
+  submitting,
+  onCancel,
+  onConfirm,
+}: {
+  action: ConfirmationAction;
+  submitting: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isAvatarRemoval = action === "remove-avatar";
+
+  return (
+    <>
+      <div className="px-1 pb-4">
+        <h3 id="account-dialog-title" className="text-lg font-black text-foreground-strong">
+          {isAvatarRemoval ? "确认移除头像" : "确认退出登录"}
+        </h3>
+        <p className="mt-1 text-caption text-muted-foreground">
+          {isAvatarRemoval
+            ? "移除后将恢复为默认头像。"
+            : "退出后需要再次输入账号和密码才能使用云端同步。"}
+        </p>
+      </div>
+      <div className="rounded-card bg-muted p-4">
+        <p className="font-bold text-foreground">
+          {isAvatarRemoval ? "确定要移除当前头像吗？" : "确定要退出当前账号吗？"}
+        </p>
+      </div>
+      <div className="mt-5 flex gap-3">
+        <Button
+          type="button"
+          variant="ghost"
+          disabled={submitting}
+          onClick={onCancel}
+          className="flex-1"
+        >
+          取消
+        </Button>
+        <Button
+          type="button"
+          variant="destructive"
+          disabled={submitting}
+          onClick={onConfirm}
+          className="flex-1"
+        >
+          {submitting
+            ? "正在处理…"
+            : isAvatarRemoval
+              ? "移除头像"
+              : "退出登录"}
+        </Button>
+      </div>
+    </>
   );
 }
 
@@ -95,12 +195,16 @@ function AccountMenu({
   avatarBusy,
   navigationOrder,
   onAvatarChange,
-  onAvatarRemove,
   onNavigationOrderChange,
-  onSignOut,
   onClose,
   onOpenPassword,
-}: AccountDialogProps & { onOpenPassword: () => void }) {
+  onRequestAvatarRemoval,
+  onRequestSignOut,
+}: Omit<AccountDialogProps, "onAvatarRemove" | "onSignOut"> & {
+  onOpenPassword: () => void;
+  onRequestAvatarRemoval: () => void;
+  onRequestSignOut: () => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [draftOrder, setDraftOrder] = useState(navigationOrder);
 
@@ -110,15 +214,6 @@ function AccountMenu({
       toast.success("头像已更新");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "头像更新失败");
-    }
-  };
-
-  const removeAvatar = async () => {
-    try {
-      await onAvatarRemove();
-      toast.success("头像已移除");
-    } catch {
-      toast.error("头像移除失败，请稍后重试");
     }
   };
 
@@ -185,7 +280,7 @@ function AccountMenu({
           <button
             type="button"
             disabled={avatarBusy}
-            onClick={() => void removeAvatar()}
+            onClick={onRequestAvatarRemoval}
             className="mx-auto mt-2 flex min-h-11 items-center gap-1.5 px-3 text-caption font-bold text-destructive disabled:opacity-45"
           >
             <Trash2 className="size-4" />
@@ -239,7 +334,7 @@ function AccountMenu({
         </Reorder.Group>
       </section>
 
-      <Button type="button" variant="destructive" onClick={() => void onSignOut()} className="mt-5 w-full">
+      <Button type="button" variant="destructive" onClick={onRequestSignOut} className="mt-5 w-full">
         <LogOut />
         退出登录
       </Button>

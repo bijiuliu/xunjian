@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { AnimatePresence, motion, Reorder, useIsPresent } from "framer-motion";
+import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, Reorder, useDragControls, useIsPresent } from "framer-motion";
 import {
   Camera,
   CheckCircle2,
@@ -227,6 +227,7 @@ function AccountMenu({
   onRequestSignOut: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const draftOrderRef = useRef(navigationOrder);
   const [draftOrder, setDraftOrder] = useState(navigationOrder);
 
   const chooseAvatar = async (file: File) => {
@@ -239,16 +240,19 @@ function AccountMenu({
   };
 
   const updateOrder = (order: InspectionTab[]) => {
+    draftOrderRef.current = order;
     setDraftOrder(order);
   };
 
   const commitOrder = async () => {
-    if (draftOrder.every((tab, index) => navigationOrder[index] === tab)) return;
-    await onNavigationOrderChange(draftOrder);
+    const next = draftOrderRef.current;
+    if (next.every((tab, index) => navigationOrder[index] === tab)) return;
+    await onNavigationOrderChange(next);
   };
 
   const resetOrder = async () => {
     const next = [...DEFAULT_NAVIGATION_ORDER];
+    draftOrderRef.current = next;
     setDraftOrder(next);
     await onNavigationOrderChange(next);
     toast.success("已恢复默认导航顺序");
@@ -328,7 +332,7 @@ function AccountMenu({
         <div className="mb-2 flex min-h-9 items-center justify-between px-1">
           <div>
             <p className="text-caption font-bold text-muted-foreground">导航顺序</p>
-            <p className="mt-0.5 text-label text-subtle-foreground">拖动排序，第一项为启动页面</p>
+            <p className="mt-0.5 text-label text-subtle-foreground">长按左侧图标拖动，第一项为启动页面</p>
           </div>
           <Button type="button" variant="ghost" size="compact" onClick={() => void resetOrder()}>
             <RotateCcw className="size-3.5" />
@@ -337,20 +341,12 @@ function AccountMenu({
         </div>
         <Reorder.Group axis="y" values={draftOrder} onReorder={updateOrder} className="space-y-2">
           {draftOrder.map((tab, index) => (
-            <Reorder.Item
+            <NavigationReorderItem
               key={tab}
-              value={tab}
-              onDragEnd={() => void commitOrder()}
-              className="flex min-h-12 touch-none select-none items-center gap-3 rounded-control bg-muted px-4 shadow-card"
-            >
-              <GripVertical className="size-5 shrink-0 text-subtle-foreground" />
-              <span className="flex-1 font-bold">{TAB_LABELS[tab]}</span>
-              {index === 0 && (
-                <span className="rounded-full bg-secondary px-2 py-1 text-label font-bold text-secondary-foreground">
-                  启动
-                </span>
-              )}
-            </Reorder.Item>
+              tab={tab}
+              index={index}
+              onCommit={() => void commitOrder()}
+            />
           ))}
         </Reorder.Group>
       </section>
@@ -360,6 +356,85 @@ function AccountMenu({
         退出登录
       </Button>
     </>
+  );
+}
+
+
+function NavigationReorderItem({
+  tab,
+  index,
+  onCommit,
+}: {
+  tab: InspectionTab;
+  index: number;
+  onCommit: () => void;
+}) {
+  const dragControls = useDragControls();
+  const longPressTimer = useRef<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const clearLongPress = () => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  useEffect(() => clearLongPress, []);
+
+  const startLongPress = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    clearLongPress();
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      setDragging(true);
+      dragControls.start(event);
+      navigator.vibrate?.(8);
+    }, 350);
+  };
+
+  const finishLongPress = () => {
+    clearLongPress();
+    if (!dragging) return;
+    setDragging(false);
+  };
+
+  return (
+    <Reorder.Item
+      value={tab}
+      dragListener={false}
+      dragControls={dragControls}
+      onDragStart={() => setDragging(true)}
+      onDragEnd={() => {
+        setDragging(false);
+        onCommit();
+      }}
+      whileDrag={{ y: -4, scale: 1.02 }}
+      transition={{ type: "spring", stiffness: 460, damping: 34 }}
+      className={`flex min-h-12 touch-pan-y select-none items-center gap-1 rounded-control px-2 pr-4 transition-colors ${
+        dragging
+          ? "relative z-10 bg-card shadow-floating"
+          : "bg-muted shadow-card"
+      }`}
+    >
+      <button
+        type="button"
+        aria-label={`长按移动${TAB_LABELS[tab]}`}
+        onPointerDown={startLongPress}
+        onPointerUp={finishLongPress}
+        onPointerCancel={finishLongPress}
+        onContextMenu={(event) => event.preventDefault()}
+        className="grid size-10 shrink-0 touch-none place-items-center rounded-small text-subtle-foreground active:bg-border/60"
+      >
+        <GripVertical className="size-5" />
+      </button>
+      <span className="flex-1 font-bold">{TAB_LABELS[tab]}</span>
+      {index === 0 && (
+        <span className="rounded-full bg-secondary px-2 py-1 text-label font-bold text-secondary-foreground">
+          启动
+        </span>
+      )}
+    </Reorder.Item>
   );
 }
 

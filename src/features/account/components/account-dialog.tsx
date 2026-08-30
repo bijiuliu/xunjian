@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { motion, Reorder, useIsPresent } from "framer-motion";
+import { AnimatePresence, motion, Reorder, useIsPresent } from "framer-motion";
 import {
   Camera,
   CheckCircle2,

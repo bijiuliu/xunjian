@@ -51,6 +51,36 @@ export function AccountDialog(props: AccountDialogProps) {
   const [confirmation, setConfirmation] = useState<ConfirmationAction | null>(null);
   const [confirming, setConfirming] = useState(false);
 
+  useEffect(() => {
+    const scrollY = window.scrollY;
+    const bodyStyle = document.body.style;
+    const previousStyles = {
+      position: bodyStyle.position,
+      top: bodyStyle.top,
+      left: bodyStyle.left,
+      right: bodyStyle.right,
+      width: bodyStyle.width,
+      overflow: bodyStyle.overflow,
+    };
+
+    bodyStyle.position = "fixed";
+    bodyStyle.top = `-${scrollY}px`;
+    bodyStyle.left = "0";
+    bodyStyle.right = "0";
+    bodyStyle.width = "100%";
+    bodyStyle.overflow = "hidden";
+
+    return () => {
+      bodyStyle.position = previousStyles.position;
+      bodyStyle.top = previousStyles.top;
+      bodyStyle.left = previousStyles.left;
+      bodyStyle.right = previousStyles.right;
+      bodyStyle.width = previousStyles.width;
+      bodyStyle.overflow = previousStyles.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, []);
+
   const confirmAction = async () => {
     if (!confirmation) return;
     setConfirming(true);
@@ -88,7 +118,7 @@ export function AccountDialog(props: AccountDialogProps) {
         aria-modal="true"
         aria-labelledby="account-dialog-title"
         aria-hidden={!isPresent}
-        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
         style={{ pointerEvents: isPresent ? "auto" : "none" }}
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}

@@ -113,11 +113,12 @@ export function AccountDialog(props: AccountDialogProps) {
       onClick={props.onClose}
     >
       <motion.div
+        layoutScroll
         role="dialog"
         aria-modal="true"
         aria-labelledby="account-dialog-title"
         aria-hidden={!isPresent}
-        className="relative flex max-h-[calc(100svh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-sheet border border-border/80 bg-card text-card-foreground shadow-floating"
+        className="max-h-[calc(100svh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
         style={{ pointerEvents: isPresent ? "auto" : "none" }}
         initial={{ y: 40, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
@@ -125,28 +126,23 @@ export function AccountDialog(props: AccountDialogProps) {
         transition={{ type: "spring", stiffness: 420, damping: 34 }}
         onClick={(event) => event.stopPropagation()}
       >
-        <motion.div
-          layoutScroll
-          className="min-h-0 overflow-y-auto overscroll-contain p-4"
-        >
-          <AccountPanel
-            {...props}
-            onRequestAvatarRemoval={() => setConfirmation("remove-avatar")}
-            onRequestSignOut={() => setConfirmation("sign-out")}
-          />
-        </motion.div>
-
-        <AnimatePresence>
-          {confirmation && (
-            <ConfirmationSheet
-              action={confirmation}
-              submitting={confirming}
-              onCancel={() => setConfirmation(null)}
-              onConfirm={() => void confirmAction()}
-            />
-          )}
-        </AnimatePresence>
+        <AccountPanel
+          {...props}
+          onRequestAvatarRemoval={() => setConfirmation("remove-avatar")}
+          onRequestSignOut={() => setConfirmation("sign-out")}
+        />
       </motion.div>
+
+      <AnimatePresence>
+        {confirmation && (
+          <ConfirmationSheet
+            action={confirmation}
+            submitting={confirming}
+            onCancel={() => setConfirmation(null)}
+            onConfirm={() => void confirmAction()}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
@@ -184,11 +180,10 @@ function ConfirmationSheet({
 
   return (
     <motion.div
-      className="absolute inset-0 z-20 flex items-end justify-center rounded-sheet p-3"
-      initial={{ y: "100%" }}
-      animate={{ y: 0 }}
-      exit={{ y: "100%" }}
-      transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+      className="fixed inset-0 z-[60] flex items-end justify-center bg-overlay/35 px-page pb-[max(1rem,env(safe-area-inset-bottom))]"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
       onClick={(event) => {
         event.stopPropagation();
         if (!submitting) onCancel();
@@ -199,6 +194,10 @@ function ConfirmationSheet({
         aria-modal="true"
         aria-labelledby="account-confirmation-title"
         className="w-full max-w-sm rounded-sheet border border-border/80 bg-card p-4 text-card-foreground shadow-floating"
+        initial={{ y: 20, opacity: 0.8, scale: 0.98 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 20, opacity: 0, scale: 0.98 }}
+        transition={{ type: "spring", stiffness: 460, damping: 34 }}
         onClick={(event) => event.stopPropagation()}
       >
         <h3

@@ -16,7 +16,7 @@ src/
 │  ├─ sync/                     # Supabase 云同步与离线操作队列
 │  └─ index.ts                  # 模块公开入口
 ├─ features/account/            # 账号面板、头像、导航偏好及其本地/云端同步
-├─ features/auth/               # Supabase 登录、注册、邮箱验证与密码恢复
+├─ features/auth/               # Supabase 登录、注册、邮箱验证、密码恢复与会话撤销
 ├─ lib/supabase/                # 浏览器 Supabase 客户端
 └─ lib/                         # 与具体业务无关的通用工具
 ```
@@ -57,6 +57,12 @@ type InspectionRecord = {
 配置 Supabase 后，第一个登录账号会接管尚未归属账号的旧本地数据。不同账号在同一浏览器中使用独立缓存；云端记录按 UUID 合并，删除使用 `deleted_at` 墓碑，草稿按 `updated_at` 解决冲突。RLS 必须始终使用 `auth.uid() = user_id` 隔离数据。
 
 用户导航顺序保存在 `user_preferences`，本地缓存键按用户隔离；四个一级导航必须各出现一次，第一项同时是启动页面。头像存放在私有 `avatars` bucket 的 `{user_id}/` 目录，通过短期签名 URL 展示，上传前在浏览器裁切压缩为 256×256 WebP。
+
+## 密码修改与跨设备会话撤销
+
+账号内改密和邮件找回重设密码共用同一套会话撤销流程：密码更新成功后先通过 Supabase Auth 撤销其他会话，再把当前时间和发起会话 ID 写入 `user_preferences.sessions_revoked_at`、`sessions_revoked_by`。当前会话根据会话 ID 保持登录，其他设备收到 Realtime 变更后执行本地登出。
+
+`src/features/auth/hooks/use-auth.ts` 负责订阅当前用户的 `user_preferences` 变更，并在首次加载、恢复联网和页面重新回到前台时补查撤销标记。因此在线设备可及时退出，离线或后台设备会在恢复后退出。该表继续使用现有 RLS 按 `auth.uid() = user_id` 隔离；不要改成全局广播，也不要使用 `user_metadata` 做授权判断。
 
 ## 修改原则
 

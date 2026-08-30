@@ -37,14 +37,14 @@ npm run build
 
 ## Supabase 账号与同步
 
-1. 在 Supabase 新建项目，按文件名顺序执行 `supabase/migrations/` 下的迁移。第一份创建巡检同步表，第二份创建用户偏好表、私有头像桶及 RLS 策略。
+1. 在 Supabase 新建项目，按文件名顺序执行 `supabase/migrations/` 下的迁移。第一份创建巡检同步表，第二份创建用户偏好表、私有头像桶及 RLS 策略，`20260830040000_session_revocation_realtime.sql` 为 `user_preferences` 增加跨设备会话撤销字段并启用 Realtime。
 2. 在 Authentication → Providers → Email 中保持邮箱注册开启。需要验证邮箱时，同时配置正确的 Site URL；本地开发可加入 `http://localhost:3000` 作为 Redirect URL。
 3. 将 `.env.example` 复制为 `.env.local`，填写项目 URL 和 publishable key。旧项目只有 anon key 时，也可将 anon key 填入 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`。
 4. GitHub Pages 部署需在仓库 Settings → Secrets and variables → Actions 中创建同名的两个 secret：
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 
-浏览器端不得配置或使用 `service_role` key。数据访问由迁移中的 Row Level Security 策略限制为当前账号。
+浏览器端不得配置或使用 `service_role` key。数据访问由迁移中的 Row Level Security 策略限制为当前账号。`user_preferences` 加入 Realtime publication 后仍受现有 RLS 约束，客户端只能订阅和更新自己的偏好记录。
 
 首次登录会把当前浏览器中的旧版巡检记录归入该账号，并按记录 UUID 与云端合并。以后在保存、删除、导入恢复、恢复联网和页面重新回到前台时同步；同步失败时继续保存在本地，联网后可重试。
 
@@ -53,3 +53,5 @@ npm run build
 登录与注册使用统一的移动端表单布局，密码输入支持显隐，注册和重置密码都需要二次确认。注册后可重发验证邮件；登录未验证邮箱时也会提供重发入口。
 
 登录页支持“忘记密码”：用户提交邮箱后，Supabase 会发送重置邮件；打开邮件链接会回到应用并显示设置新密码界面。要让生产环境的验证和重置链接正确返回 GitHub Pages，请在 Authentication → URL Configuration 中将 Site URL 设为 `https://bijiuliu.github.io/xunjian/`，并把该完整地址加入 Redirect URLs。本地调试时再额外加入 `http://localhost:3000/`。
+
+账号内修改密码和邮件找回重设密码后，应用保留当前设备登录并撤销其他设备会话。在线设备通过 `user_preferences` 的 Realtime 变更及时退出；离线或后台设备会在恢复联网或页面回到前台时检查撤销标记并退出。

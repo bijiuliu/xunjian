@@ -1,21 +1,27 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { isBeltId } from "../model/field-rules";
+import { getInspectionRecordCreatedAt } from "../model/record-time";
 import type {
   BeltId,
   InspectionDraft,
   InspectionRecord,
   InspectionValues,
 } from "../model/types";
-import { isInspectionRecord, sortInspectionRecords } from "../storage/inspection-backup";
+import {
+  isInspectionRecord,
+  sortInspectionRecords,
+} from "../storage/inspection-backup";
 import type { StoredInspectionState } from "../storage/inspection-storage";
 
 const SYNC_QUEUE_PREFIX = "night-inspection-sync-queue:";
+const CLOUD_RECORD_PAGE_SIZE = 500;
 
 type CloudInspectionRecord = {
   id: string;
   user_id: string;
   inspection_date: string;
   inspection_time: string;
+  recorded_at: string | null;
   values: InspectionValues;
   created_at: string;
   updated_at: string;
@@ -104,15 +110,12 @@ export async function pushInspectionDraft(
 ) {
   const supabase = requireSupabase();
   const updatedAt = draft.updatedAt ?? new Date().toISOString();
-  const { error } = await supabase.from("inspection_drafts").upsert(
-    {
-      user_id: userId,
-      values: draft.values,
-      belt_tab: draft.beltTab,
-      updated_at: updatedAt,
-    },
-    { onConflict: "user_id" },
-  );
+  const { error } = await supabase.rpc("upsert_inspection_draft_if_newer", {
+    p_user_id: userId,
+    p_values: draft.values,
+    p_belt_tab: draft.beltTab,
+    p_updated_at: updatedAt,
+  });
   if (error) throw error;
 }
 
@@ -205,14 +208,34 @@ async function applyReplacement(userId: string, records: InspectionRecord[]) {
 
 async function fetchCloudRecords(userId: string) {
   const supabase = requireSupabase();
-  const { data, error } = await supabase
-    .from("inspection_records")
-    .select(
-      "id, user_id, inspection_date, inspection_time, values, created_at, updated_at, deleted_at",
-    )
-    .eq("user_id", userId);
-  if (error) throw error;
-  return (data ?? []).filter(isCloudRecord);
+  const records: CloudInspectionRecord[] = [];
+  let lastId: string | null = null;
+
+  while (true) {
+    let query = supabase
+      .from("inspection_records")
+      .select(
+        "id, user_id, inspection_date, inspection_time, recorded_at, values, created_at, updated_at, deleted_at",
+      )
+      .eq("user_id", userId)
+      .order("id", { ascending: true })
+      .limit(CLOUD_RECORD_PAGE_SIZE);
+    if (lastId) query = query.gt("id", lastId);
+
+    const { data, error } = await query;
+    if (error) throw error;
+    const page = data ?? [];
+    records.push(...page.filter(isCloudRecord));
+
+    if (page.length < CLOUD_RECORD_PAGE_SIZE) break;
+    const nextLastId = page.at(-1)?.id;
+    if (typeof nextLastId !== "string" || nextLastId === lastId) {
+      throw new Error("云端巡检记录分页游标无效");
+    }
+    lastId = nextLastId;
+  }
+
+  return records;
 }
 
 async function upsertRecords(userId: string, records: InspectionRecord[]) {
@@ -225,6 +248,7 @@ async function upsertRecords(userId: string, records: InspectionRecord[]) {
       user_id: userId,
       inspection_date: record.date,
       inspection_time: record.time,
+      recorded_at: getInspectionRecordCreatedAt(record),
       values: record.values,
       updated_at: now,
       deleted_at: null,
@@ -251,6 +275,10 @@ function fromCloudRecord(row: CloudInspectionRecord): InspectionRecord {
     id: row.id,
     date: row.inspection_date,
     time: row.inspection_time,
+    createdAt:
+      row.recorded_at ??
+      getInspectionRecordCreatedAt({ time: row.inspection_time }) ??
+      row.created_at,
     values: row.values,
   };
 }
@@ -316,6 +344,7 @@ function isCloudRecord(value: unknown): value is CloudInspectionRecord {
     typeof row.user_id === "string" &&
     typeof row.inspection_date === "string" &&
     typeof row.inspection_time === "string" &&
+    (row.recorded_at === null || typeof row.recorded_at === "string") &&
     isInspectionValues(row.values) &&
     typeof row.created_at === "string" &&
     typeof row.updated_at === "string" &&

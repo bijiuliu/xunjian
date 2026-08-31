@@ -5,7 +5,7 @@ import type {
   InspectionRecord,
   InspectionValues,
 } from "../model/types";
-import { isInspectionRecord } from "./inspection-backup";
+import { normalizeInspectionRecord } from "./inspection-backup";
 
 export const RECORDS_STORAGE_KEY = "night-inspection";
 export const DRAFT_STORAGE_KEY = "night-inspection-draft";
@@ -39,7 +39,9 @@ export function loadInspectionState(): StoredInspectionState {
       localStorage.getItem(RECORDS_STORAGE_KEY) || "[]",
     ) as unknown;
     if (Array.isArray(storedRecords)) {
-      records = storedRecords.filter(isInspectionRecord);
+      records = storedRecords
+        .map(normalizeInspectionRecord)
+        .filter((record): record is InspectionRecord => record !== null);
     }
   } catch {
     records = [];
@@ -128,7 +130,9 @@ export function loadImportUndo(): ImportUndoSnapshot | null {
       }
 
       return {
-        records: parsed.records.filter(isInspectionRecord),
+        records: parsed.records
+          .map(normalizeInspectionRecord)
+          .filter((record): record is InspectionRecord => record !== null),
         expiresAt,
       };
     }
@@ -189,7 +193,9 @@ function loadAccountCache(userId: string): StoredInspectionState | null {
     if (!parsed || !Array.isArray(parsed.records)) return null;
 
     return {
-      records: parsed.records.filter(isInspectionRecord),
+      records: parsed.records
+        .map(normalizeInspectionRecord)
+        .filter((record): record is InspectionRecord => record !== null),
       values:
         parsed.values && typeof parsed.values === "object" ? parsed.values : {},
       beltTab: isBeltId(parsed.beltTab) ? parsed.beltTab : "SZ101",

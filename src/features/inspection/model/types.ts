@@ -10,6 +10,8 @@ export type InspectionRecord = {
   id: string;
   date: string;
   time: string;
+  /** ISO 8601 timestamp. Optional only while reading legacy records. */
+  createdAt?: string;
   values: InspectionValues;
 };
 

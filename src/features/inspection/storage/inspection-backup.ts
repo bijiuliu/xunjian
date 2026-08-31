@@ -3,6 +3,10 @@ import type {
   InspectionRecord,
   InspectionValues,
 } from "../model/types";
+import {
+  getInspectionRecordCreatedAt,
+  getInspectionRecordTimestamp,
+} from "../model/record-time";
 
 const BACKUP_APP_ID = "night-inspection";
 const BACKUP_SCHEMA_VERSION = 1;
@@ -35,8 +39,19 @@ export function isInspectionRecord(value: unknown): value is InspectionRecord {
     value.date.trim().length > 0 &&
     typeof value.time === "string" &&
     value.time.trim().length > 0 &&
+    (!("createdAt" in value) ||
+      (typeof value.createdAt === "string" &&
+        !Number.isNaN(Date.parse(value.createdAt)))) &&
     isInspectionValues(value.values)
   );
+}
+
+export function normalizeInspectionRecord(
+  value: unknown,
+): InspectionRecord | null {
+  if (!isInspectionRecord(value)) return null;
+  const createdAt = getInspectionRecordCreatedAt(value);
+  return createdAt ? { ...value, createdAt } : value;
 }
 
 export function createInspectionBackup(records: InspectionRecord[]) {
@@ -99,18 +114,19 @@ export function parseInspectionBackup(
   let newRecordCount = 0;
 
   for (const item of rawRecords) {
-    if (!isInspectionRecord(item)) {
+    const record = normalizeInspectionRecord(item);
+    if (!record) {
       invalidCount += 1;
       continue;
     }
-    if (fileIds.has(item.id)) {
+    if (fileIds.has(record.id)) {
       duplicateCount += 1;
       continue;
     }
 
-    fileIds.add(item.id);
-    records.push(item);
-    if (existingIds.has(item.id)) duplicateCount += 1;
+    fileIds.add(record.id);
+    records.push(record);
+    if (existingIds.has(record.id)) duplicateCount += 1;
     else newRecordCount += 1;
   }
 
@@ -143,8 +159,8 @@ export function mergeInspectionRecords(
 
 export function sortInspectionRecords(records: InspectionRecord[]) {
   return [...records].sort((left, right) => {
-    const leftTime = Date.parse(left.time);
-    const rightTime = Date.parse(right.time);
+    const leftTime = getInspectionRecordTimestamp(left);
+    const rightTime = getInspectionRecordTimestamp(right);
     if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) return 0;
     return rightTime - leftTime;
   });

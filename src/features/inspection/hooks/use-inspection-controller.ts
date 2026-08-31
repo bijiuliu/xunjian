@@ -77,6 +77,7 @@ export function useInspectionController(userId?: string) {
     userId ? "syncing" : "local",
   );
   const syncInFlight = useRef(false);
+  const draftRevision = useRef(0);
 
   const persistRecords = useCallback(
     (next: InspectionRecord[]) => {
@@ -106,16 +107,19 @@ export function useInspectionController(userId?: string) {
   const syncNow = useCallback(async () => {
     if (!userId || syncInFlight.current) return;
     syncInFlight.current = true;
+    const startingDraftRevision = draftRevision.current;
     setSyncStatus("syncing");
     try {
       const localState = loadInspectionState();
       const result = await syncInspectionAccount(userId, localState);
       saveInspectionRecords(result.records);
-      saveInspectionDraft(result.draft);
+      if (draftRevision.current === startingDraftRevision) {
+        saveInspectionDraft(result.draft);
+        setValues(result.draft.values);
+        setBeltTab(result.draft.beltTab);
+      }
       saveCurrentAccountCache(userId);
       setRecords(result.records);
-      setValues(result.draft.values);
-      setBeltTab(result.draft.beltTab);
       setSyncStatus("synced");
     } catch {
       markCloudFailure();
@@ -136,11 +140,11 @@ export function useInspectionController(userId?: string) {
       setBeltTab(stored.beltTab);
       setLastBackupAt(loadLastBackupAt());
       setImportUndoExpiresAt(loadImportUndo()?.expiresAt ?? null);
+      setDraftReady(true);
       if (userId) {
         await syncNow();
         if (!active) return;
       }
-      setDraftReady(true);
     }, 0);
 
     return () => {
@@ -189,10 +193,12 @@ export function useInspectionController(userId?: string) {
   }, [draftReady, syncNow, userId]);
 
   const updateValue = (fieldKey: string, value: string) => {
+    draftRevision.current += 1;
     setValues((current) => ({ ...current, [fieldKey]: value }));
   };
 
   const clearKeys = (keys: string[]) => {
+    draftRevision.current += 1;
     setValues((current) => ({
       ...current,
       ...Object.fromEntries(keys.map((key) => [key, ""])),
@@ -210,7 +216,13 @@ export function useInspectionController(userId?: string) {
     index: number,
     pumpNo: string,
   ) => {
+    draftRevision.current += 1;
     setValues((current) => selectPump(current, area, group, index, pumpNo));
+  };
+
+  const selectBeltTab = (nextBeltTab: BeltId) => {
+    draftRevision.current += 1;
+    setBeltTab(nextBeltTab);
   };
 
   const clearBeltItem = (
@@ -235,6 +247,7 @@ export function useInspectionController(userId?: string) {
   };
 
   const createNewInspection = () => {
+    draftRevision.current += 1;
     setValues({});
     setBeltTab("SZ101");
     clearInspectionDraft();
@@ -295,6 +308,7 @@ export function useInspectionController(userId?: string) {
       id: crypto.randomUUID(),
       date: now.toLocaleDateString("zh-CN"),
       time: now.toLocaleString("zh-CN"),
+      createdAt: now.toISOString(),
       values,
     };
     const next = [record, ...records];
@@ -475,7 +489,7 @@ export function useInspectionController(userId?: string) {
       clearPump,
       choosePump,
       clearBeltItem,
-      setBeltTab,
+      setBeltTab: selectBeltTab,
       selectTab,
       createNewInspection,
       selectRecord,

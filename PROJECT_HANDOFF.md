@@ -23,7 +23,9 @@
 src/app/page.tsx                         # App Router 路由入口，保持 Server Component
 src/features/inspection/
 ├─ components/                           # 巡检、泵区、皮带、历史、弹窗视图
-├─ hooks/use-inspection-controller.ts    # 状态、流程、Toast 与用户操作编排
+├─ hooks/use-inspection-controller.ts    # 草稿、同步与对外状态/操作组合
+├─ hooks/use-inspection-history.ts       # 保存、历史选择与删除流程
+├─ hooks/use-inspection-backup.ts        # 备份、恢复与撤销流程
 ├─ model/                                # 类型、配置、字段规则、保存校验和草稿仲裁（纯 TypeScript）
 ├─ storage/inspection-storage.ts         # 唯一的 localStorage 访问层
 └─ sync/inspection-cloud-sync.ts         # Supabase 同步、软删除与离线队列
@@ -45,9 +47,11 @@ tests/draft-version.test.mjs             # 草稿版本与跨设备冲突规则�
 5. `src/app/page.tsx`
 6. `src/features/inspection/components/night-inspection-app.tsx`
 7. `src/features/inspection/hooks/use-inspection-controller.ts`
-8. `src/features/inspection/model/draft-reconciliation.ts`
-9. `src/features/inspection/sync/inspection-cloud-sync.ts`
-10. `next.config.ts` 与 `.github/workflows/deploy.yml`
+8. `src/features/inspection/hooks/use-inspection-history.ts`
+9. `src/features/inspection/hooks/use-inspection-backup.ts`
+10. `src/features/inspection/model/draft-reconciliation.ts`
+11. `src/features/inspection/sync/inspection-cloud-sync.ts`
+12. `next.config.ts` 与 `.github/workflows/deploy.yml`
 
 修改任何 Next.js 代码前，必须先阅读本机 `node_modules/next/dist/docs/` 下对应的 Next.js 16 文档，并遵循 `AGENTS.md`。
 
@@ -265,12 +269,12 @@ npm run dev
 ```powershell
 npm run lint
 npx tsc --noEmit
-node --test --experimental-strip-types tests/draft-version.test.mjs
+npm test
 $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```
 
-截至 2026-09-01，部署基线 `7990710` 已通过 GitHub Pages 生产构建；本次文档整理也已通过本地 lint、TypeScript、11 项草稿规则测试和 Pages 构建。
+截至 2026-09-01，部署基线 `7990710` 已通过 GitHub Pages 生产构建；当前测试集包含 27 项草稿、字段规则、保存校验、备份兼容、存储兼容和导航偏好测试。
 
 涉及交互时至少手工检查：
 

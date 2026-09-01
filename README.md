@@ -44,7 +44,7 @@ npm run build
 ```powershell
 npm run lint
 npx tsc --noEmit
-node --test --experimental-strip-types tests/draft-version.test.mjs
+npm test
 $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```

@@ -10,7 +10,7 @@ src/
 ├─ components/ui/               # 可跨业务复用的基础 UI 组件
 ├─ features/inspection/
 │  ├─ components/               # 巡检界面，按泵区、皮带、历史和弹窗拆分
-│  ├─ hooks/                    # 巡检状态与用户操作编排
+│  ├─ hooks/                    # 草稿同步、历史管理和备份恢复编排
 │  ├─ model/                    # 类型、设备配置、字段规则、校验和草稿仲裁
 │  ├─ storage/                  # localStorage 兼容层
 │  ├─ sync/                     # Supabase 云同步与离线操作队列
@@ -92,8 +92,8 @@ type InspectionRecord = {
 
 1. 设备清单和显示规则修改在 `model/config.ts` 与 `model/field-rules.ts` 完成。
 2. 完整性检查修改在 `model/validation.ts` 完成。
-3. 新的用户操作流程进入 `hooks/use-inspection-controller.ts`。
+3. `hooks/use-inspection-controller.ts` 只组合公共状态、草稿编辑与同步；历史流程进入 `use-inspection-history.ts`，备份流程进入 `use-inspection-backup.ts`。
 4. 页面视觉修改限定在对应业务组件，并继续消费 `globals.css` 中的语义令牌。
 5. 通用控件优先扩展 `components/ui`；只有巡检业务使用的组件留在 `features/inspection/components`。
 6. 草稿冲突规则修改在 `model/draft-reconciliation.ts` 完成，并同步扩展 `tests/draft-version.test.mjs`。
-7. 每次修改后运行 `npm run lint`、`npx tsc --noEmit`、草稿规则测试和生产构建。
+7. 每次修改后运行 `npm run lint`、`npx tsc --noEmit`、`npm test` 和生产构建。

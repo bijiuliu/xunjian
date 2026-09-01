@@ -10,43 +10,27 @@ import {
 } from "../model/field-rules";
 import type {
   BeltId,
-  DeleteRequest,
   InspectionDraft,
-  InspectionImportPreview,
   InspectionRecord,
   InspectionTab,
   InspectionValues,
   PumpAreaId,
-  SaveValidation,
   VersionedInspectionDraft,
 } from "../model/types";
-import { validateInspection } from "../model/validation";
 import {
-  createBackupFileName,
-  createInspectionBackup,
-  mergeInspectionRecords,
-  parseInspectionBackup,
-  sortInspectionRecords,
-} from "../storage/inspection-backup";
-import {
-  clearImportUndo,
   clearInspectionDraft,
-  loadImportUndo,
   loadInspectionState,
-  loadLastBackupAt,
-  saveImportUndo,
+  prepareStorageForUser,
+  saveCurrentAccountCache,
   saveInspectionDraft,
-  saveLastBackupAt,
   saveInspectionRecords,
 } from "../storage/inspection-storage";
 import {
-  deleteCloudInspectionRecords,
   pushInspectionDraft,
-  pushInspectionRecord,
-  replaceCloudInspectionRecords,
   syncInspectionAccount,
 } from "../sync/inspection-cloud-sync";
-import { prepareStorageForUser, saveCurrentAccountCache } from "../storage/inspection-storage";
+import { useInspectionBackup } from "./use-inspection-backup";
+import { useInspectionHistory } from "./use-inspection-history";
 
 export type InspectionSyncStatus =
   | "local"
@@ -65,22 +49,7 @@ export function useInspectionController(userId?: string) {
   const [beltTab, setBeltTab] = useState<BeltId>("SZ101");
   const [values, setValues] = useState<InspectionValues>({});
   const [records, setRecords] = useState<InspectionRecord[]>([]);
-  const [selectedRecord, setSelectedRecord] =
-    useState<InspectionRecord | null>(null);
-  const [historyDirection, setHistoryDirection] = useState<1 | -1>(1);
-  const [manageHistory, setManageHistory] = useState(false);
-  const [selectedRecordIds, setSelectedRecordIds] = useState<string[]>([]);
-  const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
-  const [saveValidation, setSaveValidation] =
-    useState<SaveValidation | null>(null);
   const [draftReady, setDraftReady] = useState(false);
-  const [backupOpen, setBackupOpen] = useState(false);
-  const [lastBackupAt, setLastBackupAt] = useState<string | null>(null);
-  const [importPreview, setImportPreview] =
-    useState<InspectionImportPreview | null>(null);
-  const [importUndoExpiresAt, setImportUndoExpiresAt] = useState<number | null>(
-    null,
-  );
   const [syncStatus, setSyncStatus] = useState<InspectionSyncStatus>(
     userId ? "syncing" : "local",
   );
@@ -117,6 +86,26 @@ export function useInspectionController(userId?: string) {
     },
     [markCloudFailure],
   );
+
+  const showHistory = useCallback(() => setTab("history"), []);
+  const history = useInspectionHistory({
+    userId,
+    records,
+    values,
+    setRecords,
+    persistRecords,
+    runCloudChange,
+    showHistory,
+  });
+  const backup = useInspectionBackup({
+    userId,
+    records,
+    setRecords,
+    persistRecords,
+    runCloudChange,
+    onRecordsChanged: history.actions.resetAfterRecordsChanged,
+  });
+  const initializeBackupFromStorage = backup.actions.initializeFromStorage;
 
   const syncNow = useCallback(async () => {
     if (!userId || syncInFlight.current) return;
@@ -173,8 +162,7 @@ export function useInspectionController(userId?: string) {
         : null;
       confirmedDraftRevision.current = userId ? -1 : draftRevision.current;
       setPendingDraftUpload(null);
-      setLastBackupAt(loadLastBackupAt());
-      setImportUndoExpiresAt(loadImportUndo()?.expiresAt ?? null);
+      initializeBackupFromStorage();
       setDraftReady(true);
       if (userId) {
         await syncNow();
@@ -186,19 +174,7 @@ export function useInspectionController(userId?: string) {
       active = false;
       window.clearTimeout(loadStorage);
     };
-  }, [syncNow, userId]);
-
-  useEffect(() => {
-    if (importUndoExpiresAt === null) return;
-
-    const remaining = importUndoExpiresAt - Date.now();
-    const expiryTimer = window.setTimeout(() => {
-      clearImportUndo();
-      setImportUndoExpiresAt(null);
-    }, Math.max(0, remaining));
-
-    return () => window.clearTimeout(expiryTimer);
-  }, [importUndoExpiresAt]);
+  }, [initializeBackupFromStorage, syncNow, userId]);
 
   useEffect(() => {
     if (!draftReady || !userId || !pendingDraftUpload) return;
@@ -330,10 +306,7 @@ export function useInspectionController(userId?: string) {
   const selectTab = (nextTab: InspectionTab) => {
     setTab(nextTab);
     if (nextTab === "history") {
-      setHistoryDirection(-1);
-      setSelectedRecord(null);
-      setManageHistory(false);
-      setSelectedRecordIds([]);
+      history.actions.resetHistoryList();
     }
   };
 
@@ -342,234 +315,14 @@ export function useInspectionController(userId?: string) {
     toast("已新建空白记录");
   };
 
-  const selectRecord = (record: InspectionRecord) => {
-    setHistoryDirection(1);
-    setSelectedRecord(record);
-  };
-
-  const returnToHistoryList = () => {
-    setHistoryDirection(-1);
-    setSelectedRecord(null);
-  };
-
-  const toggleHistoryManagement = () => {
-    setManageHistory((current) => !current);
-    setSelectedRecordIds([]);
-  };
-
-  const toggleRecord = (id: string) => {
-    setSelectedRecordIds((current) =>
-      current.includes(id)
-        ? current.filter((recordId) => recordId !== id)
-        : [...current, id],
-    );
-  };
-
-  const confirmDeleteRecords = () => {
-    if (!deleteRequest) return;
-    const deleting = new Set(deleteRequest.ids);
-    const next = records.filter((record) => !deleting.has(record.id));
-    persistRecords(next);
-    setRecords(next);
-    if (selectedRecord && deleting.has(selectedRecord.id)) {
-      setHistoryDirection(-1);
-      setSelectedRecord(null);
-    }
-    setSelectedRecordIds([]);
-    setManageHistory(false);
-    setDeleteRequest(null);
-    if (userId) {
-      void runCloudChange(
-        deleteCloudInspectionRecords(userId, deleteRequest.ids),
-      );
-    }
-    toast.success(
-      deleteRequest.ids.length > 1
-        ? `已删除 ${deleteRequest.ids.length} 条记录`
-        : "已删除历史记录",
-    );
-  };
-
-  const commitSave = () => {
-    const now = new Date();
-    const record: InspectionRecord = {
-      id: crypto.randomUUID(),
-      date: now.toLocaleDateString("zh-CN"),
-      time: now.toLocaleString("zh-CN"),
-      createdAt: now.toISOString(),
-      values,
-    };
-    const next = [record, ...records];
-    persistRecords(next);
-    setRecords(next);
-    setSelectedRecord(null);
-    setManageHistory(false);
-    setSelectedRecordIds([]);
-    setSaveValidation(null);
-    setTab("history");
-    if (userId) {
-      void runCloudChange(pushInspectionRecord(userId, record));
-    }
-    toast.success("本次巡检已保存");
-  };
-
-  const save = () => {
-    const missing = validateInspection(values);
-    if (missing.unselectedPumps.length || missing.emptyInputs.length) {
-      setSaveValidation(missing);
-      return;
-    }
-    commitSave();
-  };
-
-  const closeBackup = () => {
-    setBackupOpen(false);
-    setImportPreview(null);
-  };
-
-  const exportBackup = async () => {
-    if (records.length === 0) {
-      toast.error("暂无可导出的历史记录");
-      return;
-    }
-
-    const content = createInspectionBackup(records);
-    const fileName = createBackupFileName();
-    const file = new File([content], fileName, { type: "application/json" });
-    let delivery: "share" | "download" = "download";
-
-    try {
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: "夜班巡检备份",
-            text: `共 ${records.length} 条历史记录`,
-          });
-          delivery = "share";
-        } catch (error) {
-          if (isAbortError(error)) return;
-          downloadBackupFile(file, fileName);
-        }
-      } else {
-        downloadBackupFile(file, fileName);
-      }
-
-      const exportedAt = new Date().toISOString();
-      try {
-        saveLastBackupAt(exportedAt);
-      } catch {
-        // The backup is already delivered; a timestamp failure should not
-        // turn a successful export into an error for the user.
-      }
-      setLastBackupAt(exportedAt);
-      toast.success(
-        delivery === "share"
-          ? `已分享 ${records.length} 条历史记录`
-          : `已下载 ${records.length} 条历史记录的备份`,
-      );
-    } catch {
-      toast.error("备份失败，请稍后重试");
-    }
-  };
-
-  const previewImportFile = async (file: File) => {
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("备份文件过大，请选择 10MB 以内的文件");
-      return;
-    }
-
-    try {
-      const text = await file.text();
-      setImportPreview(parseInspectionBackup(text, file.name, records));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "无法读取备份文件");
-    }
-  };
-
-  const undoImport = () => {
-    const undoSnapshot = loadImportUndo();
-    if (!undoSnapshot) {
-      setImportUndoExpiresAt(null);
-      toast.error("可撤销的恢复数据已不存在");
-      return;
-    }
-
-    try {
-      const previousRecords = undoSnapshot.records;
-      persistRecords(previousRecords);
-      setRecords(previousRecords);
-      clearImportUndo();
-      setImportUndoExpiresAt(null);
-      setSelectedRecord(null);
-      setManageHistory(false);
-      setSelectedRecordIds([]);
-      if (userId) {
-        void runCloudChange(
-          replaceCloudInspectionRecords(userId, previousRecords),
-        );
-      }
-      toast.success("已撤销上次恢复");
-    } catch {
-      toast.error("撤销失败，原备份仍已保留");
-    }
-  };
-
-  const applyImport = (mode: "merge" | "replace") => {
-    if (!importPreview) return;
-    if (mode === "merge" && importPreview.newRecordCount === 0) {
-      toast("没有需要新增的记录");
-      return;
-    }
-    if (mode === "replace" && importPreview.invalidCount > 0) {
-      toast.error("备份含无效记录，不能用于覆盖恢复");
-      return;
-    }
-
-    const next =
-      mode === "merge"
-        ? mergeInspectionRecords(records, importPreview.records)
-        : sortInspectionRecords(importPreview.records);
-
-    try {
-      const undoSnapshot = saveImportUndo(records);
-      persistRecords(next);
-      setRecords(next);
-      setImportUndoExpiresAt(undoSnapshot.expiresAt);
-      setSelectedRecord(null);
-      setManageHistory(false);
-      setSelectedRecordIds([]);
-      closeBackup();
-      if (userId) {
-        void runCloudChange(replaceCloudInspectionRecords(userId, next));
-      }
-      toast.success(
-        mode === "merge"
-          ? `已恢复 ${importPreview.newRecordCount} 条历史记录`
-          : `已替换为 ${next.length} 条历史记录`,
-        { action: { label: "撤销", onClick: undoImport } },
-      );
-    } catch {
-      toast.error("恢复失败，当前记录未更改");
-    }
-  };
-
   return {
     state: {
       tab,
       beltTab,
       values,
       records,
-      selectedRecord,
-      historyDirection,
-      manageHistory,
-      selectedRecordIds,
-      deleteRequest,
-      saveValidation,
-      backupOpen,
-      lastBackupAt,
-      importPreview,
-      canUndoImport: importUndoExpiresAt !== null,
+      ...history.state,
+      ...backup.state,
       syncStatus,
     },
     actions: {
@@ -580,40 +333,25 @@ export function useInspectionController(userId?: string) {
       setBeltTab: selectBeltTab,
       selectTab,
       createNewInspection,
-      selectRecord,
-      returnToHistoryList,
-      toggleHistoryManagement,
-      toggleRecord,
-      setDeleteRequest,
-      confirmDeleteRecords,
-      commitSave,
-      save,
-      cancelSaveValidation: () => setSaveValidation(null),
-      cancelDeleteRequest: () => setDeleteRequest(null),
-      openBackup: () => setBackupOpen(true),
-      closeBackup,
-      exportBackup,
-      previewImportFile,
-      cancelImportPreview: () => setImportPreview(null),
-      mergeImport: () => applyImport("merge"),
-      replaceImport: () => applyImport("replace"),
-      undoImport,
+      selectRecord: history.actions.selectRecord,
+      returnToHistoryList: history.actions.returnToHistoryList,
+      toggleHistoryManagement: history.actions.toggleHistoryManagement,
+      toggleRecord: history.actions.toggleRecord,
+      setDeleteRequest: history.actions.setDeleteRequest,
+      confirmDeleteRecords: history.actions.confirmDeleteRecords,
+      commitSave: history.actions.commitSave,
+      save: history.actions.save,
+      cancelSaveValidation: history.actions.cancelSaveValidation,
+      cancelDeleteRequest: history.actions.cancelDeleteRequest,
+      openBackup: backup.actions.openBackup,
+      closeBackup: backup.actions.closeBackup,
+      exportBackup: backup.actions.exportBackup,
+      previewImportFile: backup.actions.previewImportFile,
+      cancelImportPreview: backup.actions.cancelImportPreview,
+      mergeImport: backup.actions.mergeImport,
+      replaceImport: backup.actions.replaceImport,
+      undoImport: backup.actions.undoImport,
       syncNow,
     },
   };
-}
-
-function isAbortError(error: unknown) {
-  return error instanceof Error && error.name === "AbortError";
-}
-
-function downloadBackupFile(file: File, fileName: string) {
-  const url = URL.createObjectURL(file);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }

@@ -1,17 +1,10 @@
 "use client";
 
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import {
-  ArrowLeft,
-  CircleCheck,
-  KeyRound,
-  Mail,
-  ShieldCheck,
-} from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { ArrowLeft, CircleCheck, KeyRound, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { PasswordField } from "./password-field";
 import {
   getAuthErrorCode,
   getAuthErrorMessage,
@@ -23,29 +16,11 @@ import {
   validatePasswordConfirmation,
   type AuthFieldErrors,
 } from "../model/auth-validation";
-
-type AuthMode =
-  | "sign-in"
-  | "sign-up"
-  | "forgot-password"
-  | "reset-password";
+import { AuthForm } from "./auth-form";
+import type { AuthMode, AuthScreenProps } from "./auth-screen-types";
+import { AccountNotice, StatusPanel } from "./auth-status-panels";
 
 type AuthNotice = "confirmation-sent" | null;
-
-type AuthScreenProps = {
-  passwordRecovery?: boolean;
-  onSignIn: (email: string, password: string) => Promise<void>;
-  onSignUp: (
-    email: string,
-    password: string,
-  ) => Promise<{
-    needsEmailConfirmation: boolean;
-    alreadyRegistered: boolean;
-  }>;
-  onResendSignUpConfirmation: (email: string) => Promise<void>;
-  onRequestPasswordReset: (email: string) => Promise<void>;
-  onUpdatePassword: (password: string) => Promise<void>;
-};
 
 export function AuthScreen({
   passwordRecovery = false,
@@ -160,7 +135,9 @@ export function AuthScreen({
         showAlreadyRegistered();
       } else {
         setFormError(getAuthErrorMessage(error, mode));
-        setShowResendAction(mode === "sign-in" && code === "email_not_confirmed");
+        setShowResendAction(
+          mode === "sign-in" && code === "email_not_confirmed",
+        );
       }
     } finally {
       setSubmitting(false);
@@ -267,280 +244,41 @@ export function AuthScreen({
                 </Button>
               </StatusPanel>
             ) : (
-              <form onSubmit={submit} noValidate className="space-y-4">
-                {mode !== "reset-password" && (
-                  <EmailField
-                    value={email}
-                    error={fieldErrors.email}
-                    shake={alreadyRegistered}
-                    shakeKey={emailShakeKey}
-                    showForgotPassword={mode === "sign-up" && alreadyRegistered}
-                    disabled={formDisabled}
-                    onChange={(value) => {
-                      setEmail(value);
-                      setAlreadyRegistered(false);
-                      clearFieldError("email");
-                    }}
-                    onForgotPassword={() => changeMode("forgot-password")}
-                  />
-                )}
-
-                {mode !== "forgot-password" && (
-                  <PasswordField
-                    key={`auth-password-${mode}`}
-                    id="auth-password"
-                    label={mode === "reset-password" ? "新密码" : "密码"}
-                    autoComplete={
-                      mode === "sign-in" ? "current-password" : "new-password"
-                    }
-                    required
-                    minLength={8}
-                    value={password}
-                    disabled={formDisabled}
-                    error={fieldErrors.password}
-                    onChange={(event) => {
-                      setPassword(event.target.value);
-                      clearFieldError("password");
-                    }}
-                    placeholder="至少 8 位"
-                    belowAction={
-                      mode === "sign-in" ? (
-                        <button
-                          type="button"
-                          disabled={formDisabled}
-                          onClick={() => changeMode("forgot-password")}
-                          className="-mr-2 flex min-h-11 items-center px-2 text-caption font-bold text-primary disabled:opacity-45"
-                        >
-                          忘记密码？
-                        </button>
-                      ) : undefined
-                    }
-                  />
-                )}
-
-                {(mode === "sign-up" || mode === "reset-password") && (
-                  <PasswordField
-                    id="auth-confirm-password"
-                    label={mode === "reset-password" ? "确认新密码" : "确认密码"}
-                    autoComplete="new-password"
-                    required
-                    minLength={8}
-                    value={confirmPassword}
-                    disabled={formDisabled}
-                    error={fieldErrors.confirmPassword}
-                    onChange={(event) => {
-                      setConfirmPassword(event.target.value);
-                      clearFieldError("confirmPassword");
-                    }}
-                    placeholder={
-                      mode === "reset-password" ? "再次输入新密码" : "再次输入密码"
-                    }
-                  />
-                )}
-
-                {mode === "sign-up" && !fieldErrors.password && (
-                  <p className="-mt-1 text-caption text-muted-foreground">
-                    密码至少 8 位，两次输入需保持一致。
-                  </p>
-                )}
-
-                {formError && (
-                  <div
-                    role="alert"
-                    aria-live="polite"
-                    className="rounded-small bg-destructive-soft px-3 py-2 text-caption font-semibold text-destructive"
-                  >
-                    <p>{formError}</p>
-                    {showResendAction && (
-                      <button
-                        type="button"
-                        disabled={resending || resendCooldown > 0}
-                        onClick={resendConfirmation}
-                        className="mt-1 min-h-11 text-primary disabled:text-muted-foreground"
-                      >
-                        {resending
-                          ? "正在发送…"
-                          : resendCooldown > 0
-                            ? `${resendCooldown} 秒后可重发`
-                            : "重新发送验证邮件"}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                <Button type="submit" className="w-full" disabled={formDisabled}>
-                  {submitting
-                    ? "请稍候…"
-                    : mode === "sign-in"
-                      ? "登录"
-                      : mode === "sign-up"
-                        ? "创建账号"
-                        : mode === "forgot-password"
-                          ? "发送重置邮件"
-                          : "保存新密码"}
-                </Button>
-              </form>
+              <AuthForm
+                mode={mode}
+                email={email}
+                password={password}
+                confirmPassword={confirmPassword}
+                alreadyRegistered={alreadyRegistered}
+                emailShakeKey={emailShakeKey}
+                fieldErrors={fieldErrors}
+                formError={formError}
+                showResendAction={showResendAction}
+                submitting={submitting}
+                resending={resending}
+                resendCooldown={resendCooldown}
+                disabled={formDisabled}
+                onSubmit={submit}
+                onEmailChange={(value) => {
+                  setEmail(value);
+                  setAlreadyRegistered(false);
+                  clearFieldError("email");
+                }}
+                onPasswordChange={(value) => {
+                  setPassword(value);
+                  clearFieldError("password");
+                }}
+                onConfirmPasswordChange={(value) => {
+                  setConfirmPassword(value);
+                  clearFieldError("confirmPassword");
+                }}
+                onForgotPassword={() => changeMode("forgot-password")}
+                onResendConfirmation={resendConfirmation}
+              />
             )}
           </CardContent>
         </Card>
       </div>
     </main>
-  );
-}
-
-type EmailFieldProps = {
-  value: string;
-  error?: string;
-  shake: boolean;
-  shakeKey: number;
-  showForgotPassword: boolean;
-  disabled: boolean;
-  onChange: (value: string) => void;
-  onForgotPassword: () => void;
-};
-
-function EmailField({
-  value,
-  error,
-  shake,
-  shakeKey,
-  showForgotPassword,
-  disabled,
-  onChange,
-  onForgotPassword,
-}: EmailFieldProps) {
-  return (
-    <div>
-      <label className="block" htmlFor="auth-email">
-        <span className="mb-2 flex min-h-5 items-center gap-2 text-caption font-bold text-muted-foreground">
-          <Mail className="size-4" /> 邮箱
-        </span>
-        <span
-          key={shakeKey}
-          className={shake ? "auth-email-shake block" : "block"}
-        >
-          <input
-            id="auth-email"
-            type="email"
-            inputMode="email"
-            autoCapitalize="none"
-            autoComplete="email"
-            spellCheck={false}
-            required
-            value={value}
-            disabled={disabled}
-            aria-invalid={Boolean(error)}
-            aria-describedby={error ? "auth-email-error" : undefined}
-            onChange={(event) => onChange(event.target.value)}
-            placeholder="name@example.com"
-            className={`min-h-12 w-full rounded-control border bg-card px-4 text-base shadow-card outline-none transition focus:ring-4 focus:ring-primary/15 disabled:opacity-45 ${error ? "border-destructive focus:border-destructive" : "border-border focus:border-primary"}`}
-          />
-        </span>
-      </label>
-      {error && showForgotPassword ? (
-        <div
-          role="alert"
-          aria-live="assertive"
-          className="flex min-h-11 items-center justify-between gap-3"
-        >
-          <span
-            id="auth-email-error"
-            className="text-caption font-semibold text-destructive"
-          >
-            {error}
-          </span>
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={onForgotPassword}
-            className="flex min-h-11 shrink-0 items-center text-caption font-bold text-primary disabled:opacity-45"
-          >
-            忘记密码？
-          </button>
-        </div>
-      ) : error ? (
-        <span
-          id="auth-email-error"
-          className="mt-1.5 block text-caption font-semibold text-destructive"
-        >
-          {error}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-type AccountNoticeProps = {
-  email: string;
-  resending: boolean;
-  resendCooldown: number;
-  formError: string | null;
-  onResend: () => void;
-  onSignIn: () => void;
-};
-
-function AccountNotice({
-  email,
-  resending,
-  resendCooldown,
-  formError,
-  onResend,
-  onSignIn,
-}: AccountNoticeProps) {
-  return (
-    <StatusPanel
-      icon={<CircleCheck className="size-6" />}
-      title="请验证邮箱"
-      description={`验证邮件已发送至 ${email}。完成验证后即可登录。`}
-    >
-      {formError && (
-        <p
-          role="alert"
-          className="mt-4 rounded-small bg-destructive-soft px-3 py-2 text-caption font-semibold text-destructive"
-        >
-          {formError}
-        </p>
-      )}
-      <div className="mt-5 grid gap-3">
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={resending || resendCooldown > 0}
-          onClick={onResend}
-          className="w-full"
-        >
-          {resending
-            ? "正在发送…"
-            : resendCooldown > 0
-              ? `${resendCooldown} 秒后可重发`
-              : "重新发送验证邮件"}
-        </Button>
-        <Button type="button" variant="ghost" onClick={onSignIn} className="w-full">
-          返回登录
-        </Button>
-      </div>
-    </StatusPanel>
-  );
-}
-
-type StatusPanelProps = {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  children: ReactNode;
-};
-
-function StatusPanel({ icon, title, description, children }: StatusPanelProps) {
-  return (
-    <div className="text-center">
-      <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-success-soft text-success">
-        {icon}
-      </div>
-      <h2 className="mt-4 text-card-title font-bold">{title}</h2>
-      <p className="mt-2 break-words text-body leading-6 text-muted-foreground">
-        {description}
-      </p>
-      {children}
-    </div>
   );
 }

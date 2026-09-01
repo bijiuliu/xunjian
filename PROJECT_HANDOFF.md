@@ -1,6 +1,6 @@
 # 夜班巡检项目交接文档
 
-> 更新日期：2026-08-30
+> 更新日期：2026-09-01
 > 用途：让新的 Codex 对话快速接手当前代码，避免重新梳理已确认的纸表规则、回退已撤销的交互，或破坏已有浏览器数据。
 
 ## 1. 当前状态（60 秒接手）
@@ -15,6 +15,7 @@
 - 主导航默认顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；用户可在账号面板拖动排序，第一项为启动页面并跨设备同步；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
 - 架构规范：`ARCHITECTURE.md`。
+- 当前部署基线：`7990710`（`Fix offline inspection draft reconciliation`），GitHub Pages 已成功部署。
 
 当前代码已经完成模块化重构：
 
@@ -23,13 +24,14 @@ src/app/page.tsx                         # App Router 路由入口，保持 Serv
 src/features/inspection/
 ├─ components/                           # 巡检、泵区、皮带、历史、弹窗视图
 ├─ hooks/use-inspection-controller.ts    # 状态、流程、Toast 与用户操作编排
-├─ model/                                # 类型、配置、字段规则、保存校验（纯 TypeScript）
+├─ model/                                # 类型、配置、字段规则、保存校验和草稿仲裁（纯 TypeScript）
 ├─ storage/inspection-storage.ts         # 唯一的 localStorage 访问层
 └─ sync/inspection-cloud-sync.ts         # Supabase 同步、软删除与离线队列
 src/features/auth/                       # 登录、注册、邮箱验证、密码恢复与会话状态
 src/features/account/                    # 账号面板、私有头像与导航偏好同步
 src/lib/supabase/client.ts               # 浏览器 Supabase 客户端
 supabase/migrations/                     # 数据表与 RLS 策略
+tests/draft-version.test.mjs             # 草稿版本与跨设备冲突规则测试
 ```
 
 `src/app/page.tsx` 不再承载巡检业务。新的客户端根组件是 `src/features/inspection/components/night-inspection-app.tsx`。
@@ -43,7 +45,9 @@ supabase/migrations/                     # 数据表与 RLS 策略
 5. `src/app/page.tsx`
 6. `src/features/inspection/components/night-inspection-app.tsx`
 7. `src/features/inspection/hooks/use-inspection-controller.ts`
-8. `next.config.ts` 与 `.github/workflows/deploy.yml`
+8. `src/features/inspection/model/draft-reconciliation.ts`
+9. `src/features/inspection/sync/inspection-cloud-sync.ts`
+10. `next.config.ts` 与 `.github/workflows/deploy.yml`
 
 修改任何 Next.js 代码前，必须先阅读本机 `node_modules/next/dist/docs/` 下对应的 Next.js 16 文档，并遵循 `AGENTS.md`。
 
@@ -77,7 +81,7 @@ supabase/migrations/                     # 数据表与 RLS 策略
 - 正常状态是勾，点击可以切换为叉。
 - 数值不显示单位；手机输入使用数字键盘，最多两位。
 - 未填写保持为空，不自动写入 `0` 或 `1`。
-- 新建会清空填写内容和草稿，并将皮带子板块重置为 `SZ101`。
+- 新建会清空填写内容并将皮带子板块重置为 `SZ101`，同时保存一个带新版本时间的空白草稿，以便把清空状态同步到其他设备。
 
 ### 3.2 冲渣泵
 
@@ -126,7 +130,7 @@ supabase/migrations/                     # 数据表与 RLS 策略
 - 泵号选择与重复泵号交换。
 - 数值输入、局部清空、正常/异常状态切换。
 - 保存前完整性检查：分别列出未选择泵号和空白数值；可返回补充或仍然保存。
-- localStorage 历史记录、自动日期时间、草稿自动保存与新建清空。
+- localStorage 历史记录、自动日期时间、版本化草稿自动保存与跨设备清空同步。
 - Sonner 顶部成功提示；提示文本包含被清空的区域或皮带编号。
 - 历史列表、详情汇总、批量管理、二次确认、详情删除。
 - 汇总顺序：皮带区域 → 8#冲渣 → 9#冲渣。
@@ -193,13 +197,17 @@ type InspectionRecord = {
 - 历史记录键：`night-inspection`，存储 `InspectionRecord[]`。
 - 草稿键：`night-inspection-draft`，当前格式为 `{ values, beltTab, updatedAt? }`。
 - 草稿读取必须兼容旧版只保存 `values` 对象的格式。
+- `StoredInspectionState.hasDraft` 必须保留：它用于区分“存在一个内容为空的草稿”和“根本没有草稿”，不能再用 `Object.keys(values).length` 推断。
 - 巡检数据的 localStorage 访问只能放在 `src/features/inspection/storage/inspection-storage.ts`；账号偏好缓存只能放在 `src/features/account/storage/`，组件和领域模型不得直接访问 `localStorage`。
 - 修改字段 key、记录结构或存储键之前，必须先设计归一化/迁移并验证旧浏览器数据。
 - 未配置 Supabase 时，清理浏览器站点数据、换浏览器或换手机会丢失记录；配置并登录后可从云端恢复。
 - 第一个登录账号接管未归属账号的旧数据；同一浏览器中的不同账号使用隔离缓存。
 - 云端表使用 RLS 按 `auth.uid() = user_id` 隔离；记录采用软删除，草稿按更新时间解决冲突。
+- 草稿规则位于 `model/draft-reconciliation.ts`：较新版本胜出、相同版本采用云端副本、无版本旧草稿不能覆盖已有云端草稿。编辑时间戳必须严格递增；RPC `upsert_inspection_draft_if_newer` 是服务端的最终并发保护，返回 `false` 后客户端必须重新获取云端版本。
 - 跨设备会话撤销复用 `user_preferences`：`sessions_revoked_at` 记录撤销时间，`sessions_revoked_by` 记录发起会话 ID；当前会话据此保持登录，其他会话退出。
 - 仓库迁移文件为 `supabase/migrations/20260830040000_session_revocation_realtime.sql`；生产 Supabase 已执行并登记为 `20260830110531_session_revocation_realtime`。该迁移只新增两个可空字段并把 `user_preferences` 加入 `supabase_realtime` publication，不改动现有用户、巡检、头像或导航数据。
+- `supabase/migrations/20260831101013_protect_drafts_and_add_recorded_at.sql` 为历史记录增加 `recorded_at`，并提供受 Auth 与参数校验保护的草稿条件写入 RPC。新环境必须按文件名顺序执行到该迁移。
+- `supabase/migrations/20260901043209_revoke_rls_auto_enable_api_execution.sql` 撤销 `PUBLIC`、`anon`、`authenticated`、`service_role` 对 `public.rls_auto_enable()` 的直接执行权。`ensure_rls` 事件触发器继续由 `postgres` 自动执行；不要为消除告警而删除该触发器或改成 `SECURITY INVOKER`。
 - 当前只有 manifest，没有可靠 Service Worker 离线缓存；不要宣称“完全离线”。
 
 ## 6. 架构与部署约束
@@ -257,18 +265,20 @@ npm run dev
 ```powershell
 npm run lint
 npx tsc --noEmit
+node --test --experimental-strip-types tests/draft-version.test.mjs
 $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```
 
-截至 2026-08-30，跨设备会话撤销改动已通过 `npm run lint`、`npx tsc --noEmit` 和生产构建。
+截至 2026-09-01，部署基线 `7990710` 已通过 GitHub Pages 生产构建；本次文档整理也已通过本地 lint、TypeScript、11 项草稿规则测试和 Pages 构建。
 
 涉及交互时至少手工检查：
 
 - 四个一级板块与三个皮带子板块能正常切换；快速切换不出现错位。
 - 重复泵号按交换规则处理。
 - 数值输入最多两位；卡片清空仅影响当前卡片；顶部提示文案正确。
-- 刷新后草稿、泵号、状态和当前皮带子板块能恢复；新建后草稿清空且回到 `SZ101`。
+- 刷新后草稿、泵号、状态和当前皮带子板块能恢复；新建后内容为空且回到 `SZ101`，另一设备同步后也应得到空白草稿。
+- 两台设备同时修改草稿时较新版本胜出；旧版无时间戳缓存、较旧 RPC 写入和相同时间版本都不能覆盖已确认的云端新版本。
 - 保存校验能区分未选泵号与空数值；保存后汇总顺序、日期时间与历史持久化正确。
 - 历史列表到详情及返回方向正确；详情底部操作栏始终相对视口稳定。
 - 历史管理模式下，删除区为列表内吸底；末张卡片只在靠近删除区时轻微渐隐，删除按钮不遮挡或抢占卡片点击。

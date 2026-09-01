@@ -21,6 +21,10 @@ export type InspectionDraft = {
   updatedAt?: string;
 };
 
+export type VersionedInspectionDraft = InspectionDraft & {
+  updatedAt: string;
+};
+
 export type SaveValidation = {
   unselectedPumps: string[];
   emptyInputs: string[];

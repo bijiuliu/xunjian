@@ -26,6 +26,7 @@ export type StoredInspectionState = {
   values: InspectionValues;
   beltTab: BeltId;
   draftUpdatedAt: string | null;
+  hasDraft: boolean;
 };
 
 export function loadInspectionState(): StoredInspectionState {
@@ -33,6 +34,7 @@ export function loadInspectionState(): StoredInspectionState {
   let values: InspectionValues = {};
   let beltTab: BeltId = "SZ101";
   let draftUpdatedAt: string | null = null;
+  let hasDraft = false;
 
   try {
     const storedRecords = JSON.parse(
@@ -50,6 +52,7 @@ export function loadInspectionState(): StoredInspectionState {
   try {
     const storedDraft = localStorage.getItem(DRAFT_STORAGE_KEY);
     if (storedDraft) {
+      hasDraft = true;
       const draft = JSON.parse(storedDraft) as unknown;
       if (draft && typeof draft === "object" && "values" in draft) {
         const savedDraft = draft as Partial<InspectionDraft>;
@@ -67,9 +70,10 @@ export function loadInspectionState(): StoredInspectionState {
     }
   } catch {
     localStorage.removeItem(DRAFT_STORAGE_KEY);
+    hasDraft = false;
   }
 
-  return { records, values, beltTab, draftUpdatedAt };
+  return { records, values, beltTab, draftUpdatedAt, hasDraft };
 }
 
 export function saveInspectionRecords(records: InspectionRecord[]) {
@@ -163,11 +167,13 @@ export function prepareStorageForUser(userId: string): StoredInspectionState {
   localStorage.removeItem(IMPORT_UNDO_STORAGE_KEY);
   localStorage.removeItem(LAST_BACKUP_STORAGE_KEY);
   saveInspectionRecords(nextState.records);
-  if (nextState.draftUpdatedAt) {
+  if (nextState.hasDraft) {
     saveInspectionDraft({
       values: nextState.values,
       beltTab: nextState.beltTab,
-      updatedAt: nextState.draftUpdatedAt,
+      ...(nextState.draftUpdatedAt
+        ? { updatedAt: nextState.draftUpdatedAt }
+        : {}),
     });
   } else {
     clearInspectionDraft();
@@ -192,15 +198,22 @@ function loadAccountCache(userId: string): StoredInspectionState | null {
     ) as Partial<StoredInspectionState> | null;
     if (!parsed || !Array.isArray(parsed.records)) return null;
 
+    const values =
+      parsed.values && typeof parsed.values === "object" ? parsed.values : {};
+    const draftUpdatedAt =
+      typeof parsed.draftUpdatedAt === "string" ? parsed.draftUpdatedAt : null;
+
     return {
       records: parsed.records
         .map(normalizeInspectionRecord)
         .filter((record): record is InspectionRecord => record !== null),
-      values:
-        parsed.values && typeof parsed.values === "object" ? parsed.values : {},
+      values,
       beltTab: isBeltId(parsed.beltTab) ? parsed.beltTab : "SZ101",
-      draftUpdatedAt:
-        typeof parsed.draftUpdatedAt === "string" ? parsed.draftUpdatedAt : null,
+      draftUpdatedAt,
+      hasDraft:
+        typeof parsed.hasDraft === "boolean"
+          ? parsed.hasDraft
+          : draftUpdatedAt !== null || Object.keys(values).length > 0,
     };
   } catch {
     return null;
@@ -213,5 +226,6 @@ function emptyInspectionState(): StoredInspectionState {
     values: {},
     beltTab: "SZ101",
     draftUpdatedAt: null,
+    hasDraft: false,
   };
 }

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { createNextDraftUpdatedAt } from "../model/draft-reconciliation";
 import {
   getBeltItemKeys,
   getPumpCardKeys,
@@ -10,12 +11,14 @@ import {
 import type {
   BeltId,
   DeleteRequest,
+  InspectionDraft,
   InspectionImportPreview,
   InspectionRecord,
   InspectionTab,
   InspectionValues,
   PumpAreaId,
   SaveValidation,
+  VersionedInspectionDraft,
 } from "../model/types";
 import { validateInspection } from "../model/validation";
 import {
@@ -52,6 +55,11 @@ export type InspectionSyncStatus =
   | "offline"
   | "error";
 
+type PendingDraftUpload = {
+  draft: VersionedInspectionDraft;
+  revision: number;
+};
+
 export function useInspectionController(userId?: string) {
   const [tab, setTab] = useState<InspectionTab>("slag8");
   const [beltTab, setBeltTab] = useState<BeltId>("SZ101");
@@ -78,6 +86,10 @@ export function useInspectionController(userId?: string) {
   );
   const syncInFlight = useRef(false);
   const draftRevision = useRef(0);
+  const confirmedDraftRevision = useRef(0);
+  const draftSnapshot = useRef<InspectionDraft | null>(null);
+  const [pendingDraftUpload, setPendingDraftUpload] =
+    useState<PendingDraftUpload | null>(null);
 
   const persistRecords = useCallback(
     (next: InspectionRecord[]) => {
@@ -96,7 +108,9 @@ export function useInspectionController(userId?: string) {
       setSyncStatus("syncing");
       try {
         await operation;
-        setSyncStatus("synced");
+        if (confirmedDraftRevision.current === draftRevision.current) {
+          setSyncStatus("synced");
+        }
       } catch {
         markCloudFailure();
       }
@@ -114,13 +128,23 @@ export function useInspectionController(userId?: string) {
       const result = await syncInspectionAccount(userId, localState);
       saveInspectionRecords(result.records);
       if (draftRevision.current === startingDraftRevision) {
-        saveInspectionDraft(result.draft);
-        setValues(result.draft.values);
-        setBeltTab(result.draft.beltTab);
+        if (result.draft) {
+          saveInspectionDraft(result.draft);
+          draftSnapshot.current = result.draft;
+          setValues(result.draft.values);
+          setBeltTab(result.draft.beltTab);
+        } else {
+          clearInspectionDraft();
+          draftSnapshot.current = null;
+        }
+        confirmedDraftRevision.current = startingDraftRevision;
+        setPendingDraftUpload(null);
       }
       saveCurrentAccountCache(userId);
       setRecords(result.records);
-      setSyncStatus("synced");
+      if (draftRevision.current === startingDraftRevision) {
+        setSyncStatus("synced");
+      }
     } catch {
       markCloudFailure();
     } finally {
@@ -138,6 +162,17 @@ export function useInspectionController(userId?: string) {
       setRecords(stored.records);
       setValues(stored.values);
       setBeltTab(stored.beltTab);
+      draftSnapshot.current = stored.hasDraft
+        ? {
+            values: stored.values,
+            beltTab: stored.beltTab,
+            ...(stored.draftUpdatedAt
+              ? { updatedAt: stored.draftUpdatedAt }
+              : {}),
+          }
+        : null;
+      confirmedDraftRevision.current = userId ? -1 : draftRevision.current;
+      setPendingDraftUpload(null);
       setLastBackupAt(loadLastBackupAt());
       setImportUndoExpiresAt(loadImportUndo()?.expiresAt ?? null);
       setDraftReady(true);
@@ -166,17 +201,35 @@ export function useInspectionController(userId?: string) {
   }, [importUndoExpiresAt]);
 
   useEffect(() => {
-    if (!draftReady) return;
-    const draft = { values, beltTab, updatedAt: new Date().toISOString() };
-    saveInspectionDraft(draft);
-    if (userId) saveCurrentAccountCache(userId);
-
-    if (!userId) return;
-    const uploadDraft = window.setTimeout(() => {
-      void runCloudChange(pushInspectionDraft(userId, draft));
-    }, 800);
+    if (!draftReady || !userId || !pendingDraftUpload) return;
+    let uploadDraft = 0;
+    const upload = async () => {
+      if (syncInFlight.current) {
+        uploadDraft = window.setTimeout(upload, 100);
+        return;
+      }
+      setSyncStatus("syncing");
+      try {
+        const result = await pushInspectionDraft(
+          userId,
+          pendingDraftUpload.draft,
+        );
+        if (result === "stale") {
+          await syncNow();
+          return;
+        }
+        if (draftRevision.current === pendingDraftUpload.revision) {
+          confirmedDraftRevision.current = pendingDraftUpload.revision;
+          setPendingDraftUpload(null);
+          setSyncStatus("synced");
+        }
+      } catch {
+        markCloudFailure();
+      }
+    };
+    uploadDraft = window.setTimeout(upload, 800);
     return () => window.clearTimeout(uploadDraft);
-  }, [beltTab, draftReady, runCloudChange, userId, values]);
+  }, [draftReady, markCloudFailure, pendingDraftUpload, syncNow, userId]);
 
   useEffect(() => {
     if (!userId || !draftReady) return;
@@ -192,16 +245,50 @@ export function useInspectionController(userId?: string) {
     };
   }, [draftReady, syncNow, userId]);
 
+  const applyDraftChange = useCallback(
+    (
+      change: (
+        current: InspectionDraft,
+      ) => Pick<InspectionDraft, "values" | "beltTab">,
+    ) => {
+      const current = draftSnapshot.current ?? {
+        values: {},
+        beltTab: "SZ101" as const,
+      };
+      const changed = change(current);
+      const draft: VersionedInspectionDraft = {
+        ...changed,
+        updatedAt: createNextDraftUpdatedAt(current.updatedAt),
+      };
+      const revision = draftRevision.current + 1;
+      draftRevision.current = revision;
+      draftSnapshot.current = draft;
+      saveInspectionDraft(draft);
+      if (userId) saveCurrentAccountCache(userId);
+      setValues(draft.values);
+      setBeltTab(draft.beltTab);
+      setPendingDraftUpload({ draft, revision });
+      setSyncStatus(
+        userId ? (navigator.onLine ? "syncing" : "offline") : "local",
+      );
+    },
+    [userId],
+  );
+
   const updateValue = (fieldKey: string, value: string) => {
-    draftRevision.current += 1;
-    setValues((current) => ({ ...current, [fieldKey]: value }));
+    applyDraftChange((current) => ({
+      values: { ...current.values, [fieldKey]: value },
+      beltTab: current.beltTab,
+    }));
   };
 
   const clearKeys = (keys: string[]) => {
-    draftRevision.current += 1;
-    setValues((current) => ({
-      ...current,
-      ...Object.fromEntries(keys.map((key) => [key, ""])),
+    applyDraftChange((current) => ({
+      values: {
+        ...current.values,
+        ...Object.fromEntries(keys.map((key) => [key, ""])),
+      },
+      beltTab: current.beltTab,
     }));
   };
 
@@ -216,13 +303,17 @@ export function useInspectionController(userId?: string) {
     index: number,
     pumpNo: string,
   ) => {
-    draftRevision.current += 1;
-    setValues((current) => selectPump(current, area, group, index, pumpNo));
+    applyDraftChange((current) => ({
+      values: selectPump(current.values, area, group, index, pumpNo),
+      beltTab: current.beltTab,
+    }));
   };
 
   const selectBeltTab = (nextBeltTab: BeltId) => {
-    draftRevision.current += 1;
-    setBeltTab(nextBeltTab);
+    applyDraftChange((current) => ({
+      values: current.values,
+      beltTab: nextBeltTab,
+    }));
   };
 
   const clearBeltItem = (
@@ -247,10 +338,7 @@ export function useInspectionController(userId?: string) {
   };
 
   const createNewInspection = () => {
-    draftRevision.current += 1;
-    setValues({});
-    setBeltTab("SZ101");
-    clearInspectionDraft();
+    applyDraftChange(() => ({ values: {}, beltTab: "SZ101" }));
     toast("已新建空白记录");
   };
 

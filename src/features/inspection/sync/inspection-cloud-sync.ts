@@ -1,11 +1,16 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
 import { isBeltId } from "../model/field-rules";
+import {
+  parseDraftPushResult,
+  reconcileInspectionDraft,
+  type DraftPushResult,
+} from "../model/draft-reconciliation";
 import { getInspectionRecordCreatedAt } from "../model/record-time";
 import type {
   BeltId,
-  InspectionDraft,
   InspectionRecord,
   InspectionValues,
+  VersionedInspectionDraft,
 } from "../model/types";
 import {
   isInspectionRecord,
@@ -42,7 +47,7 @@ type SyncOperation =
 
 export type CloudSyncResult = {
   records: InspectionRecord[];
-  draft: InspectionDraft;
+  draft: VersionedInspectionDraft | null;
 };
 
 export async function syncInspectionAccount(
@@ -106,23 +111,43 @@ export async function replaceCloudInspectionRecords(
 
 export async function pushInspectionDraft(
   userId: string,
-  draft: InspectionDraft,
-) {
+  draft: VersionedInspectionDraft,
+): Promise<DraftPushResult> {
   const supabase = requireSupabase();
-  const updatedAt = draft.updatedAt ?? new Date().toISOString();
-  const { error } = await supabase.rpc("upsert_inspection_draft_if_newer", {
+  const { data, error } = await supabase.rpc("upsert_inspection_draft_if_newer", {
     p_user_id: userId,
     p_values: draft.values,
     p_belt_tab: draft.beltTab,
-    p_updated_at: updatedAt,
+    p_updated_at: draft.updatedAt,
   });
   if (error) throw error;
+  return parseDraftPushResult(data);
 }
 
 async function reconcileDraft(
   userId: string,
   localState: StoredInspectionState,
-): Promise<InspectionDraft> {
+): Promise<VersionedInspectionDraft | null> {
+  const localDraft = localState.hasDraft
+    ? {
+        values: localState.values,
+        beltTab: localState.beltTab,
+        ...(localState.draftUpdatedAt
+          ? { updatedAt: localState.draftUpdatedAt }
+          : {}),
+      }
+    : null;
+
+  return reconcileInspectionDraft({
+    localDraft,
+    fetchCloud: () => fetchCloudDraft(userId),
+    pushLocal: (draft) => pushInspectionDraft(userId, draft),
+  });
+}
+
+async function fetchCloudDraft(
+  userId: string,
+): Promise<VersionedInspectionDraft | null> {
   const supabase = requireSupabase();
   const { data, error } = await supabase
     .from("inspection_drafts")
@@ -132,37 +157,13 @@ async function reconcileDraft(
   if (error) throw error;
 
   const cloudDraft = isCloudDraft(data) ? data : null;
-  const hasLocalDraft = Object.keys(localState.values).length > 0;
-  const localUpdatedAt =
-    localState.draftUpdatedAt ??
-    (hasLocalDraft ? new Date().toISOString() : null);
-
-  if (
-    localUpdatedAt &&
-    (!cloudDraft || Date.parse(localUpdatedAt) >= Date.parse(cloudDraft.updated_at))
-  ) {
-    const localDraft = {
-      values: localState.values,
-      beltTab: localState.beltTab,
-      updatedAt: localUpdatedAt,
-    };
-    await pushInspectionDraft(userId, localDraft);
-    return localDraft;
-  }
-
-  if (cloudDraft) {
-    return {
-      values: cloudDraft.values,
-      beltTab: cloudDraft.belt_tab,
-      updatedAt: cloudDraft.updated_at,
-    };
-  }
-
-  return {
-    values: localState.values,
-    beltTab: localState.beltTab,
-    updatedAt: localUpdatedAt ?? undefined,
-  };
+  return cloudDraft
+    ? {
+        values: cloudDraft.values,
+        beltTab: cloudDraft.belt_tab,
+        updatedAt: cloudDraft.updated_at,
+      }
+    : null;
 }
 
 async function flushSyncQueue(userId: string) {

@@ -23,7 +23,8 @@ import {
   uploadAvatar,
 } from "../sync/user-preferences-cloud";
 
-const INITIAL_SYNC_RETRY_DELAYS_MS = [1_000, 3_000, 10_000] as const;
+import { createPreferenceRetry } from "../sync/preference-retry";
+import { preloadAvatar } from "../sync/preload-avatar";
 
 export function useUserPreferences(userId?: string) {
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
@@ -35,7 +36,7 @@ export function useUserPreferences(userId?: string) {
   const [ready, setReady] = useState(!userId);
   const [avatarBusy, setAvatarBusy] = useState(false);
   const avatarPathRef = useRef<string | null>(
-    avatarUrl ? preferences.avatarPath : null,
+    null,
   );
 
   const refreshAvatarUrl = useCallback(
@@ -52,20 +53,18 @@ export function useUserPreferences(userId?: string) {
       if (avatarPathRef.current === path) return true;
 
       const cachedUrl = userId ? loadCachedAvatarUrl(userId, path) : null;
-      if (cachedUrl) {
-        avatarPathRef.current = path;
-        setAvatarUrl(cachedUrl);
-        return true;
-      }
-
       try {
-        const signedUrl = await createAvatarUrl(path);
+        const signedUrl = cachedUrl ?? await createAvatarUrl(path);
+        // Only replace the visible avatar once its image is actually available.
+        await preloadAvatar(signedUrl);
         avatarPathRef.current = path;
-        if (userId) saveCachedAvatarUrl(userId, path, signedUrl);
         setAvatarUrl(signedUrl);
+        if (userId && !cachedUrl) saveCachedAvatarUrl(userId, path, signedUrl);
         return true;
       } catch {
         avatarPathRef.current = null;
+        // An unusable cached URL must not trap subsequent attempts.
+        if (userId) clearCachedAvatarUrl(userId);
         return false;
       }
     },
@@ -122,44 +121,20 @@ export function useUserPreferences(userId?: string) {
   }, [refreshAvatarUrl, userId]);
 
   useEffect(() => {
-    let cancelled = false;
-    let retryTimer: number | undefined;
-
-    const runInitialSync = async (attempt: number) => {
-      const succeeded = await syncPreferences();
-      if (
-        succeeded ||
-        cancelled ||
-        !navigator.onLine ||
-        attempt >= INITIAL_SYNC_RETRY_DELAYS_MS.length
-      ) {
-        return;
-      }
-
-      retryTimer = window.setTimeout(
-        () => void runInitialSync(attempt + 1),
-        INITIAL_SYNC_RETRY_DELAYS_MS[attempt],
-      );
-    };
-
-    const initialSync = window.setTimeout(() => void runInitialSync(0), 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(initialSync);
-      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-    };
-  }, [syncPreferences]);
-
-  useEffect(() => {
     if (!userId) return;
-    const handleOnline = () => void syncPreferences();
+    const retry = createPreferenceRetry(syncPreferences, () => navigator.onLine);
+    const initialSync = window.setTimeout(retry.start, 0);
     const handleVisibility = () => {
-      if (document.visibilityState === "visible") void syncPreferences();
+      if (document.visibilityState === "visible") retry.start();
     };
-    window.addEventListener("online", handleOnline);
+    window.addEventListener("online", retry.start);
+    window.addEventListener("offline", retry.pause);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
-      window.removeEventListener("online", handleOnline);
+      window.clearTimeout(initialSync);
+      retry.dispose();
+      window.removeEventListener("online", retry.start);
+      window.removeEventListener("offline", retry.pause);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [syncPreferences, userId]);

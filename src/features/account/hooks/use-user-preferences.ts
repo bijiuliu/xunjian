@@ -23,6 +23,8 @@ import {
   uploadAvatar,
 } from "../sync/user-preferences-cloud";
 
+const INITIAL_SYNC_RETRY_DELAYS_MS = [1_000, 3_000, 10_000] as const;
+
 export function useUserPreferences(userId?: string) {
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
     userId ? getInitialUserPreferences(userId) : createDefaultPreferences(),
@@ -42,18 +44,18 @@ export function useUserPreferences(userId?: string) {
         avatarPathRef.current = null;
         if (userId) clearCachedAvatarUrl(userId);
         setAvatarUrl(null);
-        return;
+        return true;
       }
 
       // Re-use the existing signed URL while the avatar object is unchanged.
       // The browser-local cache also survives a page refresh until the URL nears expiry.
-      if (avatarPathRef.current === path) return;
+      if (avatarPathRef.current === path) return true;
 
       const cachedUrl = userId ? loadCachedAvatarUrl(userId, path) : null;
       if (cachedUrl) {
         avatarPathRef.current = path;
         setAvatarUrl(cachedUrl);
-        return;
+        return true;
       }
 
       try {
@@ -61,16 +63,17 @@ export function useUserPreferences(userId?: string) {
         avatarPathRef.current = path;
         if (userId) saveCachedAvatarUrl(userId, path, signedUrl);
         setAvatarUrl(signedUrl);
+        return true;
       } catch {
         avatarPathRef.current = null;
-        setAvatarUrl(null);
+        return false;
       }
     },
     [userId],
   );
 
   const syncPreferences = useCallback(async () => {
-    if (!userId) return;
+    if (!userId) return true;
     const cached = loadCachedUserPreferences(userId);
 
     try {
@@ -106,20 +109,45 @@ export function useUserPreferences(userId?: string) {
 
       saveCachedUserPreferences(userId, { ...resolved, pending: false });
       setPreferences(resolved);
-      await refreshAvatarUrl(resolved.avatarPath);
+      return await refreshAvatarUrl(resolved.avatarPath);
     } catch {
       if (cached) {
         setPreferences(cached);
         await refreshAvatarUrl(cached.avatarPath);
       }
+      return false;
     } finally {
       setReady(true);
     }
   }, [refreshAvatarUrl, userId]);
 
   useEffect(() => {
-    const initialSync = window.setTimeout(() => void syncPreferences(), 0);
-    return () => window.clearTimeout(initialSync);
+    let cancelled = false;
+    let retryTimer: number | undefined;
+
+    const runInitialSync = async (attempt: number) => {
+      const succeeded = await syncPreferences();
+      if (
+        succeeded ||
+        cancelled ||
+        !navigator.onLine ||
+        attempt >= INITIAL_SYNC_RETRY_DELAYS_MS.length
+      ) {
+        return;
+      }
+
+      retryTimer = window.setTimeout(
+        () => void runInitialSync(attempt + 1),
+        INITIAL_SYNC_RETRY_DELAYS_MS[attempt],
+      );
+    };
+
+    const initialSync = window.setTimeout(() => void runInitialSync(0), 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialSync);
+      if (retryTimer !== undefined) window.clearTimeout(retryTimer);
+    };
   }, [syncPreferences]);
 
   useEffect(() => {

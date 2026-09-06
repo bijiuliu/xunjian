@@ -49,6 +49,40 @@ export async function pushCloudUserPreferences(
   if (error) throw error;
 }
 
+export async function pushCloudNavigationOrder(
+  userId: string,
+  navigationOrder: UserPreferences["navigationOrder"],
+  updatedAt: string,
+) {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from("user_preferences")
+    .update({ navigation_order: navigationOrder, updated_at: updatedAt })
+    .eq("user_id", userId)
+    .lte("updated_at", updatedAt)
+    .select("user_id")
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
+export async function pushCloudAvatarPath(
+  userId: string,
+  avatarPath: string | null,
+  updatedAt: string,
+) {
+  const supabase = requireSupabase();
+  const { data, error } = await supabase
+    .from("user_preferences")
+    .update({ avatar_path: avatarPath, updated_at: updatedAt })
+    .eq("user_id", userId)
+    .lte("updated_at", updatedAt)
+    .select("user_id")
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null;
+}
+
 export async function createAvatarUrl(path: string) {
   const supabase = requireSupabase();
   const { data, error } = await supabase.storage

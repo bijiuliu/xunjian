@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { InspectionTab } from "@/features/inspection/model/types";
 import {
   createDefaultPreferences,
+  createNextPreferenceUpdatedAt,
   isNavigationOrder,
   type UserPreferences,
 } from "../model/user-preferences";
@@ -19,6 +20,8 @@ import {
   createAvatarUrl,
   deleteAvatar,
   fetchCloudUserPreferences,
+  pushCloudAvatarPath,
+  pushCloudNavigationOrder,
   pushCloudUserPreferences,
   uploadAvatar,
 } from "../sync/user-preferences-cloud";
@@ -35,6 +38,7 @@ export function useUserPreferences(userId?: string) {
   );
   const [ready, setReady] = useState(!userId);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const preferenceRevision = useRef(0);
   const avatarPathRef = useRef<string | null>(
     null,
   );
@@ -73,13 +77,47 @@ export function useUserPreferences(userId?: string) {
 
   const syncPreferences = useCallback(async () => {
     if (!userId) return true;
+    const startingRevision = preferenceRevision.current;
     const cached = loadCachedUserPreferences(userId);
 
     try {
       const cloud = await fetchCloudUserPreferences(userId);
       let resolved: UserPreferences;
 
-      if (
+      if (cached?.pending && cached.pendingFields?.length) {
+        resolved = cloud ?? {
+          ...createDefaultPreferences(),
+          updatedAt: new Date().toISOString(),
+        };
+        if (!cloud) await pushCloudUserPreferences(userId, resolved);
+
+        if (cached.pendingFields.includes("navigationOrder")) {
+          const updatedAt = createNextPreferenceUpdatedAt(resolved.updatedAt);
+          const committed = await pushCloudNavigationOrder(
+            userId,
+            cached.navigationOrder,
+            updatedAt,
+          );
+          if (committed) {
+            resolved = {
+              ...resolved,
+              navigationOrder: [...cached.navigationOrder],
+              updatedAt,
+            };
+          }
+        }
+        if (cached.pendingFields.includes("avatarPath")) {
+          const updatedAt = createNextPreferenceUpdatedAt(resolved.updatedAt);
+          const committed = await pushCloudAvatarPath(
+            userId,
+            cached.avatarPath,
+            updatedAt,
+          );
+          if (committed) {
+            resolved = { ...resolved, avatarPath: cached.avatarPath, updatedAt };
+          }
+        }
+      } else if (
         cached?.pending &&
         (!cloud || Date.parse(cached.updatedAt) >= Date.parse(cloud.updatedAt))
       ) {
@@ -106,11 +144,12 @@ export function useUserPreferences(userId?: string) {
         await pushCloudUserPreferences(userId, resolved);
       }
 
+      if (preferenceRevision.current !== startingRevision) return false;
       saveCachedUserPreferences(userId, { ...resolved, pending: false });
       setPreferences(resolved);
       return await refreshAvatarUrl(resolved.avatarPath);
     } catch {
-      if (cached) {
+      if (cached && preferenceRevision.current === startingRevision) {
         setPreferences(cached);
         await refreshAvatarUrl(cached.avatarPath);
       }
@@ -139,36 +178,53 @@ export function useUserPreferences(userId?: string) {
     };
   }, [syncPreferences, userId]);
 
-  const persist = useCallback(
+  const persistNavigationOrder = useCallback(
     async (next: UserPreferences) => {
       if (!userId) return;
+      const revision = preferenceRevision.current + 1;
+      preferenceRevision.current = revision;
       setPreferences(next);
-      saveCachedUserPreferences(userId, { ...next, pending: true });
+      saveCachedUserPreferences(userId, {
+        ...next,
+        pending: true,
+        pendingFields: ["navigationOrder"],
+      });
       try {
-        await pushCloudUserPreferences(userId, next);
-        saveCachedUserPreferences(userId, { ...next, pending: false });
+        const committed = await pushCloudNavigationOrder(
+          userId,
+          next.navigationOrder,
+          next.updatedAt,
+        );
+        if (preferenceRevision.current !== revision) return;
+        if (committed) {
+          saveCachedUserPreferences(userId, { ...next, pending: false });
+        } else {
+          await syncPreferences();
+        }
       } catch {
         // The pending cache is reconciled when the app returns online.
       }
     },
-    [userId],
+    [syncPreferences, userId],
   );
 
   const setNavigationOrder = useCallback(
     async (navigationOrder: InspectionTab[]) => {
       if (!isNavigationOrder(navigationOrder)) return;
-      await persist({
+      await persistNavigationOrder({
         ...preferences,
         navigationOrder: [...navigationOrder],
-        updatedAt: new Date().toISOString(),
+        updatedAt: createNextPreferenceUpdatedAt(preferences.updatedAt),
       });
     },
-    [persist, preferences],
+    [persistNavigationOrder, preferences],
   );
 
   const setAvatar = useCallback(
     async (file: File) => {
       if (!userId) return;
+      const revision = preferenceRevision.current + 1;
+      preferenceRevision.current = revision;
       setAvatarBusy(true);
       let uploadedPath: string | null = null;
       try {
@@ -178,13 +234,32 @@ export function useUserPreferences(userId?: string) {
         const next = {
           ...preferences,
           avatarPath: uploadedPath,
-          updatedAt: new Date().toISOString(),
+          updatedAt: createNextPreferenceUpdatedAt(preferences.updatedAt),
         };
-        await pushCloudUserPreferences(userId, next);
-        saveCachedUserPreferences(userId, { ...next, pending: false });
+        const committed = await pushCloudAvatarPath(
+          userId,
+          uploadedPath,
+          next.updatedAt,
+        );
+        if (!committed) throw new Error("头像已在其他设备更新，请重试");
+        if (preferenceRevision.current !== revision) return;
+        const cached = loadCachedUserPreferences(userId);
+        const navigationPending = Boolean(
+          cached?.pending &&
+            (!cached.pendingFields ||
+              cached.pendingFields.includes("navigationOrder")),
+        );
+        saveCachedUserPreferences(userId, {
+          ...next,
+          pending: navigationPending,
+          ...(navigationPending
+            ? { pendingFields: ["navigationOrder" as const] }
+            : {}),
+        });
         setPreferences(next);
         await refreshAvatarUrl(uploadedPath);
         if (previousPath) void deleteAvatar(previousPath);
+        if (navigationPending) void syncPreferences();
       } catch (error) {
         if (uploadedPath) void deleteAvatar(uploadedPath);
         throw error;
@@ -192,30 +267,51 @@ export function useUserPreferences(userId?: string) {
         setAvatarBusy(false);
       }
     },
-    [preferences, refreshAvatarUrl, userId],
+    [preferences, refreshAvatarUrl, syncPreferences, userId],
   );
 
   const removeAvatar = useCallback(async () => {
     if (!userId || !preferences.avatarPath) return;
+    const revision = preferenceRevision.current + 1;
+    preferenceRevision.current = revision;
     const previousPath = preferences.avatarPath;
     setAvatarBusy(true);
     try {
       const next = {
         ...preferences,
         avatarPath: null,
-        updatedAt: new Date().toISOString(),
+        updatedAt: createNextPreferenceUpdatedAt(preferences.updatedAt),
       };
-      await pushCloudUserPreferences(userId, next);
-      saveCachedUserPreferences(userId, { ...next, pending: false });
+      const committed = await pushCloudAvatarPath(
+        userId,
+        null,
+        next.updatedAt,
+      );
+      if (!committed) throw new Error("头像已在其他设备更新，请重试");
+      if (preferenceRevision.current !== revision) return;
+      const cached = loadCachedUserPreferences(userId);
+      const navigationPending = Boolean(
+        cached?.pending &&
+          (!cached.pendingFields ||
+            cached.pendingFields.includes("navigationOrder")),
+      );
+      saveCachedUserPreferences(userId, {
+        ...next,
+        pending: navigationPending,
+        ...(navigationPending
+          ? { pendingFields: ["navigationOrder" as const] }
+          : {}),
+      });
       setPreferences(next);
       avatarPathRef.current = null;
       clearCachedAvatarUrl(userId);
       setAvatarUrl(null);
       await deleteAvatar(previousPath);
+      if (navigationPending) void syncPreferences();
     } finally {
       setAvatarBusy(false);
     }
-  }, [preferences, userId]);
+  }, [preferences, syncPreferences, userId]);
 
   return {
     navigationOrder: preferences.navigationOrder,

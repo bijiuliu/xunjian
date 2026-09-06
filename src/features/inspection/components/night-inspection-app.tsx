@@ -183,7 +183,11 @@ function InspectionAppContent({
             className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-control bg-white/10 px-3 text-caption font-bold text-header-muted transition hover:bg-white/15 disabled:opacity-70"
           >
             <SyncIcon status={state.syncStatus} />
-            {syncStatusLabel(state.syncStatus)}
+            {syncStatusLabel(
+              state.syncStatus,
+              state.pendingSyncCount,
+              state.lastSyncedAt,
+            )}
           </button>
         )}
         <div className="mt-5 grid grid-cols-2 gap-2">
@@ -292,10 +296,33 @@ function SyncIcon({ status }: { status: InspectionSyncStatus }) {
   return <Cloud className="size-4" />;
 }
 
-function syncStatusLabel(status: InspectionSyncStatus) {
+function syncStatusLabel(
+  status: InspectionSyncStatus,
+  pendingCount: number,
+  lastSyncedAt: string | null,
+) {
   if (status === "syncing") return "正在同步";
-  if (status === "offline") return "当前离线，联网后自动同步";
-  if (status === "error") return "同步失败，点此重试";
-  if (status === "synced") return "云端已同步";
+  if (status === "offline") {
+    return pendingCount > 0
+      ? `离线使用中 · 待同步 ${pendingCount} 项`
+      : "离线使用中";
+  }
+  if (status === "error") {
+    return pendingCount > 0
+      ? `同步暂未完成 · 待同步 ${pendingCount} 项`
+      : "同步暂未完成 · 点此重试";
+  }
+  if (status === "synced") {
+    return lastSyncedAt ? `已同步 · ${formatSyncTime(lastSyncedAt)}` : "已同步";
+  }
   return "仅保存在本机";
+}
+
+function formatSyncTime(value: string) {
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) return "刚刚";
+  return time.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

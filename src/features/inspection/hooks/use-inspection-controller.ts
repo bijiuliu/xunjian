@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { getSupabaseClient } from "@/lib/supabase/client";
 import { createNextDraftUpdatedAt } from "../model/draft-reconciliation";
 import {
   getBeltItemKeys,
@@ -26,6 +27,7 @@ import {
   saveInspectionRecords,
 } from "../storage/inspection-storage";
 import {
+  getPendingInspectionSyncCount,
   pushInspectionDraft,
   syncInspectionAccount,
 } from "../sync/inspection-cloud-sync";
@@ -53,7 +55,13 @@ export function useInspectionController(userId?: string) {
   const [syncStatus, setSyncStatus] = useState<InspectionSyncStatus>(
     userId ? "syncing" : "local",
   );
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const syncInFlight = useRef(false);
+  const syncNowRef = useRef<() => Promise<void>>(async () => undefined);
+  const syncRerunRequested = useRef(false);
+  const recordsRevision = useRef(0);
+  const retryAttempt = useRef(0);
   const draftRevision = useRef(0);
   const confirmedDraftRevision = useRef(0);
   const draftSnapshot = useRef<InspectionDraft | null>(null);
@@ -63,28 +71,43 @@ export function useInspectionController(userId?: string) {
   const persistRecords = useCallback(
     (next: InspectionRecord[]) => {
       saveInspectionRecords(next);
+      recordsRevision.current += 1;
       if (userId) saveCurrentAccountCache(userId);
     },
     [userId],
   );
 
   const markCloudFailure = useCallback(() => {
+    if (userId) {
+      setPendingSyncCount(getPendingInspectionSyncCount(userId));
+    }
     setSyncStatus(navigator.onLine ? "error" : "offline");
-  }, []);
+  }, [userId]);
 
   const runCloudChange = useCallback(
     async (operation: Promise<void>) => {
       setSyncStatus("syncing");
+      if (userId) {
+        setPendingSyncCount(getPendingInspectionSyncCount(userId));
+      }
       try {
         await operation;
-        if (confirmedDraftRevision.current === draftRevision.current) {
+        const pending = userId ? getPendingInspectionSyncCount(userId) : 0;
+        setPendingSyncCount(pending);
+        if (
+          pending === 0 &&
+          !syncInFlight.current &&
+          confirmedDraftRevision.current === draftRevision.current
+        ) {
+          retryAttempt.current = 0;
+          setLastSyncedAt(new Date().toISOString());
           setSyncStatus("synced");
         }
       } catch {
         markCloudFailure();
       }
     },
-    [markCloudFailure],
+    [markCloudFailure, userId],
   );
 
   const showHistory = useCallback(() => setTab("history"), []);
@@ -108,14 +131,28 @@ export function useInspectionController(userId?: string) {
   const initializeBackupFromStorage = backup.actions.initializeFromStorage;
 
   const syncNow = useCallback(async () => {
-    if (!userId || syncInFlight.current) return;
+    if (!userId) return;
+    if (syncInFlight.current) {
+      syncRerunRequested.current = true;
+      return;
+    }
     syncInFlight.current = true;
+    syncRerunRequested.current = false;
     const startingDraftRevision = draftRevision.current;
+    const startingRecordsRevision = recordsRevision.current;
     setSyncStatus("syncing");
+    setPendingSyncCount(getPendingInspectionSyncCount(userId));
     try {
       const localState = loadInspectionState();
       const result = await syncInspectionAccount(userId, localState);
-      saveInspectionRecords(result.records);
+      if (recordsRevision.current === startingRecordsRevision) {
+        saveInspectionRecords(result.records);
+        setRecords(result.records);
+      } else {
+        // A save, delete or import happened after this request started. Its
+        // local snapshot must win until a fresh synchronization completes.
+        syncRerunRequested.current = true;
+      }
       if (draftRevision.current === startingDraftRevision) {
         if (result.draft) {
           saveInspectionDraft(result.draft);
@@ -130,16 +167,31 @@ export function useInspectionController(userId?: string) {
         setPendingDraftUpload(null);
       }
       saveCurrentAccountCache(userId);
-      setRecords(result.records);
-      if (draftRevision.current === startingDraftRevision) {
+      const pending = getPendingInspectionSyncCount(userId);
+      setPendingSyncCount(pending);
+      if (
+        pending === 0 &&
+        recordsRevision.current === startingRecordsRevision &&
+        draftRevision.current === startingDraftRevision
+      ) {
+        retryAttempt.current = 0;
+        setLastSyncedAt(new Date().toISOString());
         setSyncStatus("synced");
       }
     } catch {
       markCloudFailure();
     } finally {
       syncInFlight.current = false;
+      if (syncRerunRequested.current) {
+        syncRerunRequested.current = false;
+        window.setTimeout(() => void syncNowRef.current(), 0);
+      }
     }
   }, [markCloudFailure, userId]);
+
+  useEffect(() => {
+    syncNowRef.current = syncNow;
+  }, [syncNow]);
 
   useEffect(() => {
     let active = true;
@@ -161,6 +213,10 @@ export function useInspectionController(userId?: string) {
           }
         : null;
       confirmedDraftRevision.current = userId ? -1 : draftRevision.current;
+      recordsRevision.current = 0;
+      setPendingSyncCount(
+        userId ? getPendingInspectionSyncCount(userId) : 0,
+      );
       setPendingDraftUpload(null);
       initializeBackupFromStorage();
       setDraftReady(true);
@@ -197,7 +253,13 @@ export function useInspectionController(userId?: string) {
         if (draftRevision.current === pendingDraftUpload.revision) {
           confirmedDraftRevision.current = pendingDraftUpload.revision;
           setPendingDraftUpload(null);
-          setSyncStatus("synced");
+          const pending = getPendingInspectionSyncCount(userId);
+          setPendingSyncCount(pending);
+          if (pending === 0) {
+            retryAttempt.current = 0;
+            setLastSyncedAt(new Date().toISOString());
+            setSyncStatus("synced");
+          }
         }
       } catch {
         markCloudFailure();
@@ -206,6 +268,15 @@ export function useInspectionController(userId?: string) {
     uploadDraft = window.setTimeout(upload, 800);
     return () => window.clearTimeout(uploadDraft);
   }, [draftReady, markCloudFailure, pendingDraftUpload, syncNow, userId]);
+
+  useEffect(() => {
+    if (!userId || syncStatus !== "error" || !navigator.onLine) return;
+    const delays = [1_000, 3_000, 10_000, 30_000];
+    const delay = delays[Math.min(retryAttempt.current, delays.length - 1)];
+    retryAttempt.current += 1;
+    const timer = window.setTimeout(() => void syncNow(), delay);
+    return () => window.clearTimeout(timer);
+  }, [syncNow, syncStatus, userId]);
 
   useEffect(() => {
     if (!userId || !draftReady) return;
@@ -218,6 +289,45 @@ export function useInspectionController(userId?: string) {
     return () => {
       window.removeEventListener("online", handleOnline);
       document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [draftReady, syncNow, userId]);
+
+  useEffect(() => {
+    if (!userId || !draftReady) return;
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+    let refreshTimer = 0;
+    const refresh = () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void syncNow(), 200);
+    };
+    const channel = supabase
+      .channel(`inspection-sync:${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "inspection_records",
+          filter: `user_id=eq.${userId}`,
+        },
+        refresh,
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "inspection_drafts",
+          filter: `user_id=eq.${userId}`,
+        },
+        refresh,
+      )
+      .subscribe();
+
+    return () => {
+      window.clearTimeout(refreshTimer);
+      void supabase.removeChannel(channel);
     };
   }, [draftReady, syncNow, userId]);
 
@@ -324,6 +434,8 @@ export function useInspectionController(userId?: string) {
       ...history.state,
       ...backup.state,
       syncStatus,
+      pendingSyncCount,
+      lastSyncedAt,
     },
     actions: {
       updateValue,

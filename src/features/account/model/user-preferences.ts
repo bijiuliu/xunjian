@@ -27,3 +27,12 @@ export function createDefaultPreferences(): UserPreferences {
     updatedAt: new Date(0).toISOString(),
   };
 }
+
+export function createNextPreferenceUpdatedAt(
+  previousUpdatedAt: string | undefined,
+  now = Date.now(),
+) {
+  const previous = previousUpdatedAt ? Date.parse(previousUpdatedAt) : Number.NaN;
+  const next = Number.isNaN(previous) ? now : Math.max(now, previous + 1);
+  return new Date(next).toISOString();
+}

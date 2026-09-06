@@ -24,7 +24,10 @@ import {
   saveImportUndo,
   saveLastBackupAt,
 } from "../storage/inspection-storage";
-import { replaceCloudInspectionRecords } from "../sync/inspection-cloud-sync";
+import {
+  mergeCloudInspectionRecords,
+  replaceCloudInspectionRecords,
+} from "../sync/inspection-cloud-sync";
 
 type UseInspectionBackupOptions = {
   userId?: string;
@@ -183,7 +186,11 @@ export function useInspectionBackup({
       onRecordsChanged();
       closeBackup();
       if (userId) {
-        void runCloudChange(replaceCloudInspectionRecords(userId, next));
+        const cloudChange =
+          mode === "merge"
+            ? mergeCloudInspectionRecords(userId, importPreview.records)
+            : replaceCloudInspectionRecords(userId, next);
+        void runCloudChange(cloudChange);
       }
       toast.success(
         mode === "merge"

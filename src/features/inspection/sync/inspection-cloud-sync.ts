@@ -17,8 +17,13 @@ import {
   sortInspectionRecords,
 } from "../storage/inspection-backup";
 import type { StoredInspectionState } from "../storage/inspection-storage";
+import {
+  enqueueInspectionSyncOperation,
+  flushInspectionSyncQueue,
+  getPendingInspectionSyncCount,
+  type InspectionSyncOperation,
+} from "./inspection-sync-queue";
 
-const SYNC_QUEUE_PREFIX = "night-inspection-sync-queue:";
 const CLOUD_RECORD_PAGE_SIZE = 500;
 
 type CloudInspectionRecord = {
@@ -40,11 +45,6 @@ type CloudInspectionDraft = {
   updated_at: string;
 };
 
-type SyncOperation =
-  | { type: "upsert"; record: InspectionRecord }
-  | { type: "delete"; ids: string[] }
-  | { type: "replace"; records: InspectionRecord[] };
-
 export type CloudSyncResult = {
   records: InspectionRecord[];
   draft: VersionedInspectionDraft | null;
@@ -55,19 +55,22 @@ export async function syncInspectionAccount(
   localState: StoredInspectionState,
 ): Promise<CloudSyncResult> {
   await flushSyncQueue(userId);
-  const cloudRows = await fetchCloudRecords(userId);
+  let cloudRows = await fetchCloudRecords(userId);
   const cloudIds = new Set(cloudRows.map((row) => row.id));
   const localOnly = localState.records.filter((record) => !cloudIds.has(record.id));
 
   if (localOnly.length > 0) {
     await upsertRecords(userId, localOnly);
+    // Insert-only uploads intentionally cannot revive tombstones. Refetch so
+    // deleted records are not accidentally restored to the local list.
+    cloudRows = await fetchCloudRecords(userId);
   }
 
   const activeCloudRecords = cloudRows
     .filter((row) => !row.deleted_at)
     .map(fromCloudRecord)
     .filter(isInspectionRecord);
-  const records = sortInspectionRecords([...activeCloudRecords, ...localOnly]);
+  const records = sortInspectionRecords(activeCloudRecords);
   const draft = await reconcileDraft(userId, localState);
 
   return { records, draft };
@@ -77,37 +80,35 @@ export async function pushInspectionRecord(
   userId: string,
   record: InspectionRecord,
 ) {
-  try {
-    await upsertRecords(userId, [record]);
-  } catch (error) {
-    appendSyncOperation(userId, { type: "upsert", record });
-    throw error;
-  }
+  enqueueInspectionSyncOperation(userId, { type: "upsert", record });
+  await flushSyncQueue(userId);
 }
 
 export async function deleteCloudInspectionRecords(
   userId: string,
   ids: string[],
 ) {
-  try {
-    await softDeleteRecords(userId, ids);
-  } catch (error) {
-    appendSyncOperation(userId, { type: "delete", ids });
-    throw error;
-  }
+  enqueueInspectionSyncOperation(userId, { type: "delete", ids });
+  await flushSyncQueue(userId);
+}
+
+export async function mergeCloudInspectionRecords(
+  userId: string,
+  records: InspectionRecord[],
+) {
+  enqueueInspectionSyncOperation(userId, { type: "merge", records });
+  await flushSyncQueue(userId);
 }
 
 export async function replaceCloudInspectionRecords(
   userId: string,
   records: InspectionRecord[],
 ) {
-  try {
-    await applyReplacement(userId, records);
-  } catch (error) {
-    saveSyncQueue(userId, [{ type: "replace", records }]);
-    throw error;
-  }
+  enqueueInspectionSyncOperation(userId, { type: "replace", records });
+  await flushSyncQueue(userId);
 }
+
+export { getPendingInspectionSyncCount };
 
 export async function pushInspectionDraft(
   userId: string,
@@ -167,22 +168,15 @@ async function fetchCloudDraft(
 }
 
 async function flushSyncQueue(userId: string) {
-  const queue = loadSyncQueue(userId);
-  if (queue.length === 0) return;
-
-  for (let index = 0; index < queue.length; index += 1) {
-    try {
-      await applyOperation(userId, queue[index]);
-    } catch (error) {
-      saveSyncQueue(userId, queue.slice(index));
-      throw error;
-    }
-  }
-
-  saveSyncQueue(userId, []);
+  await flushInspectionSyncQueue(userId, (operation) =>
+    applyOperation(userId, operation),
+  );
 }
 
-async function applyOperation(userId: string, operation: SyncOperation) {
+async function applyOperation(
+  userId: string,
+  operation: InspectionSyncOperation,
+) {
   if (operation.type === "upsert") {
     await upsertRecords(userId, [operation.record]);
     return;
@@ -191,20 +185,42 @@ async function applyOperation(userId: string, operation: SyncOperation) {
     await softDeleteRecords(userId, operation.ids);
     return;
   }
+  if (operation.type === "merge") {
+    await upsertRecords(userId, operation.records);
+    return;
+  }
   await applyReplacement(userId, operation.records);
 }
 
 async function applyReplacement(userId: string, records: InspectionRecord[]) {
+  const supabase = requireSupabase();
+  const { error } = await supabase.rpc("replace_inspection_records", {
+    p_user_id: userId,
+    p_records: records.map((record) => ({
+      id: record.id,
+      inspection_date: record.date,
+      inspection_time: record.time,
+      recorded_at: getInspectionRecordCreatedAt(record),
+      values: record.values,
+    })),
+  });
+  if (!error) return;
+  if (error.code !== "PGRST202") throw error;
+
+  // During a rolling deployment an older database may not expose the RPC
+  // yet. Keep the existing eventually-consistent fallback until the
+  // migration reaches that environment.
   const activeCloudRows = (await fetchCloudRecords(userId)).filter(
     (row) => !row.deleted_at,
   );
   const desiredIds = new Set(records.map((record) => record.id));
-  const deletingIds = activeCloudRows
-    .filter((row) => !desiredIds.has(row.id))
-    .map((row) => row.id);
-
-  await upsertRecords(userId, records);
-  await softDeleteRecords(userId, deletingIds);
+  await restoreRecords(userId, records);
+  await softDeleteRecords(
+    userId,
+    activeCloudRows
+      .filter((row) => !desiredIds.has(row.id))
+      .map((row) => row.id),
+  );
 }
 
 async function fetchCloudRecords(userId: string) {
@@ -240,6 +256,23 @@ async function fetchCloudRecords(userId: string) {
 }
 
 async function upsertRecords(userId: string, records: InspectionRecord[]) {
+  if (records.length === 0) return;
+  const supabase = requireSupabase();
+  const { error } = await supabase.from("inspection_records").upsert(
+    records.map((record) => ({
+      id: record.id,
+      user_id: userId,
+      inspection_date: record.date,
+      inspection_time: record.time,
+      recorded_at: getInspectionRecordCreatedAt(record),
+      values: record.values,
+    })),
+    { onConflict: "user_id,id", ignoreDuplicates: true },
+  );
+  if (error) throw error;
+}
+
+async function restoreRecords(userId: string, records: InspectionRecord[]) {
   if (records.length === 0) return;
   const supabase = requireSupabase();
   const now = new Date().toISOString();
@@ -288,53 +321,6 @@ function requireSupabase() {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error("Supabase 尚未配置");
   return supabase;
-}
-
-function appendSyncOperation(userId: string, operation: SyncOperation) {
-  const queue = loadSyncQueue(userId);
-  if (operation.type === "upsert") {
-    const next = queue.filter(
-      (item) => item.type !== "upsert" || item.record.id !== operation.record.id,
-    );
-    saveSyncQueue(userId, [...next, operation]);
-    return;
-  }
-  saveSyncQueue(userId, [...queue, operation]);
-}
-
-function loadSyncQueue(userId: string): SyncOperation[] {
-  try {
-    const parsed = JSON.parse(
-      localStorage.getItem(`${SYNC_QUEUE_PREFIX}${userId}`) || "[]",
-    ) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isSyncOperation);
-  } catch {
-    return [];
-  }
-}
-
-function saveSyncQueue(userId: string, queue: SyncOperation[]) {
-  const key = `${SYNC_QUEUE_PREFIX}${userId}`;
-  if (queue.length === 0) localStorage.removeItem(key);
-  else localStorage.setItem(key, JSON.stringify(queue));
-}
-
-function isSyncOperation(value: unknown): value is SyncOperation {
-  if (!value || typeof value !== "object" || !("type" in value)) return false;
-  const operation = value as Partial<SyncOperation>;
-  if (operation.type === "upsert") return isInspectionRecord(operation.record);
-  if (operation.type === "delete") {
-    return (
-      Array.isArray(operation.ids) &&
-      operation.ids.every((id) => typeof id === "string")
-    );
-  }
-  return (
-    operation.type === "replace" &&
-    Array.isArray(operation.records) &&
-    operation.records.every(isInspectionRecord)
-  );
 }
 
 function isCloudRecord(value: unknown): value is CloudInspectionRecord {

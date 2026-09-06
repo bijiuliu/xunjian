@@ -16,6 +16,7 @@ type CachedAvatarUrl = {
 
 export type CachedUserPreferences = UserPreferences & {
   pending: boolean;
+  pendingFields?: Array<"navigationOrder" | "avatarPath">;
 };
 
 export function loadCachedUserPreferences(
@@ -41,6 +42,12 @@ export function loadCachedUserPreferences(
         typeof parsed.avatarPath === "string" ? parsed.avatarPath : null,
       updatedAt: parsed.updatedAt,
       pending: Boolean(parsed.pending),
+      pendingFields: Array.isArray(parsed.pendingFields)
+        ? parsed.pendingFields.filter(
+            (field): field is "navigationOrder" | "avatarPath" =>
+              field === "navigationOrder" || field === "avatarPath",
+          )
+        : undefined,
     };
   } catch {
     return null;

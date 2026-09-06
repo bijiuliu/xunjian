@@ -4,8 +4,16 @@ import test from "node:test";
 import {
   DEFAULT_NAVIGATION_ORDER,
   createDefaultPreferences,
+  createNextPreferenceUpdatedAt,
   isNavigationOrder,
 } from "../src/features/account/model/user-preferences.ts";
+
+test("preference edits stay newer than a future cloud timestamp", () => {
+  assert.equal(
+    createNextPreferenceUpdatedAt("2026-09-06T12:00:00.000Z", 0),
+    "2026-09-06T12:00:00.001Z",
+  );
+});
 
 test("navigation order accepts every tab exactly once", () => {
   assert.equal(isNavigationOrder(["history", "slag9", "belt", "slag8"]), true);

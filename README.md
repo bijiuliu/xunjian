@@ -17,6 +17,7 @@
 src/app/                         # App Router 入口、布局和全局样式
 src/components/ui/               # 本地基础 UI 组件
 src/features/inspection/         # 巡检视图、流程、规则、存储和云同步
+src/features/inspection/sync/    # 云端同步、持久化离线队列和冲突保护
 src/features/auth/               # 登录、注册、验证、密码恢复和会话撤销
 src/features/account/            # 账号面板、头像和导航偏好
 src/lib/supabase/                # 浏览器 Supabase 客户端
@@ -64,7 +65,13 @@ npm run build
 
 ## Supabase 账号与同步
 
-1. 在 Supabase 新建项目，按文件名顺序执行 `supabase/migrations/` 下的迁移。第一份创建巡检同步表，第二份创建用户偏好表、私有头像桶及 RLS 策略，第三份增加跨设备会话撤销字段并启用 Realtime，第四份增加历史记录的 `recorded_at` 并创建只接受较新草稿的 RPC，第五份撤销 API 角色对内部 `SECURITY DEFINER` 事件触发函数的直接执行权。
+1. 在 Supabase 新建项目，按文件名顺序执行 `supabase/migrations/` 下的全部迁移：
+   - `202608280001_create_inspection_sync.sql`：创建巡检记录、草稿及初始同步结构。
+   - `20260829150903_user_preferences_and_private_avatars.sql`：创建用户偏好、私有头像桶及 RLS 策略。
+   - `20260830040000_session_revocation_realtime.sql`：增加跨设备会话撤销字段并为用户偏好启用 Realtime。
+   - `20260831101013_protect_drafts_and_add_recorded_at.sql`：增加 `recorded_at`，并创建只接受较新草稿的 RPC。
+   - `20260901043209_revoke_rls_auto_enable_api_execution.sql`：撤销 API 角色对内部 `SECURITY DEFINER` 事件触发函数的直接执行权。
+   - `20260906170915_reliable_inspection_sync.sql`：创建事务型整体恢复 RPC，并为巡检记录和草稿启用 Realtime。
 2. 在 Authentication → Providers → Email 中保持邮箱注册开启。需要验证邮箱时，同时配置正确的 Site URL；本地开发可加入 `http://localhost:3000` 作为 Redirect URL。
 3. 将 `.env.example` 复制为 `.env.local`，填写项目 URL 和 publishable key。旧项目只有 anon key 时，也可将 anon key 填入 `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`。
 4. GitHub Pages 部署需在仓库 Settings → Secrets and variables → Actions 中创建同名的两个 secret：
@@ -73,11 +80,15 @@ npm run build
 
 浏览器端不得配置或使用 `service_role` key。数据访问由迁移中的 Row Level Security 策略限制为当前账号。`user_preferences` 加入 Realtime publication 后仍受现有 RLS 约束，客户端只能订阅和更新自己的偏好记录。
 
-首次登录会把当前浏览器中的旧版巡检记录归入该账号，并按记录 UUID 与云端合并。以后在保存、删除、导入恢复、恢复联网和页面重新回到前台时同步；同步失败时继续保存在本地，联网后可重试。
+首次登录会把当前浏览器中的旧版巡检记录归入该账号，并按记录 UUID 与云端合并。以后在保存、删除、导入恢复、恢复联网和页面重新回到前台时同步。历史记录的保存、删除、合并导入和覆盖恢复会先写入按账号隔离的持久化操作队列，再尝试访问网络；失败项保留在浏览器中，并按 1、3、10、30 秒退避重试，恢复联网或回到前台时也会立即补查。
 
-历史记录通过 UUID 合并，删除通过云端 `deleted_at` 墓碑传播。草稿的每次真实编辑都会生成严格递增的 `updatedAt`：较新版本胜出，相同版本采用已确认的云端副本，旧版无时间戳草稿不能覆盖已有云端草稿。数据库 RPC 会再次拒绝过期写入，客户端收到拒绝后重新获取云端最新版本。新建空白记录也会保存为空白版本化草稿，因此清空操作能够同步到其他设备。
+历史记录通过 UUID 合并，删除通过云端 `deleted_at` 墓碑传播。普通保存和合并导入只允许新增，不能复活墓碑；只有用户明确选择“覆盖恢复”时，才通过 `replace_inspection_records` 数据库事务恢复目标记录并软删除其余活动记录。队列中的每项操作拥有稳定 ID，同步成功后只确认对应项，因此同步进行期间新增的操作不会丢失。同步请求返回前如果本地记录又发生变化，客户端会拒绝旧结果并重新同步。
 
-首页右上角头像打开账号面板。头像存放在私有 Supabase Storage bucket 中；邮箱状态、修改密码、导航拖动排序和退出登录均集中在此。导航第一项作为启动页面，偏好本地缓存并同步到 `user_preferences`，换设备登录后自动恢复。
+草稿的每次真实编辑都会生成严格递增的 `updatedAt`：较新版本胜出，相同版本采用已确认的云端副本，旧版无时间戳草稿不能覆盖已有云端草稿。数据库 RPC 会再次拒绝过期写入，客户端收到拒绝后重新获取云端最新版本。新建空白记录也会保存为空白版本化草稿，因此清空操作能够同步到其他设备。在线账号同时订阅巡检记录和草稿的 Realtime 变更；Realtime 只负责触发重新拉取，恢复联网和页面回到前台时仍会完整补查。
+
+首页同步状态会区分“同步中”“离线（含待同步数量）”“同步失败（含待同步数量）”和最近同步时间。该数量来自当前账号的本地操作队列，不包含尚在防抖等待中的草稿编辑。
+
+首页右上角头像打开账号面板。头像存放在私有 Supabase Storage bucket 中，客户端缓存短期签名 URL，并在图片实际加载成功后才替换当前显示；失败后会在启动、恢复联网或回到前台时重试。邮箱状态、修改密码、导航拖动排序和退出登录均集中在此。导航第一项作为启动页面，偏好本地缓存并同步到 `user_preferences`，换设备登录后自动恢复。导航顺序和头像路径按字段分别提交，并通过更新时间条件和本地修订号防止旧请求覆盖另一设备或后续操作的新值。
 
 登录与注册使用统一的移动端表单布局，密码输入支持显隐，注册和重置密码都需要二次确认。注册后可重发验证邮件；登录未验证邮箱时也会提供重发入口。
 

@@ -13,7 +13,7 @@ src/
 │  ├─ hooks/                    # 草稿同步、历史管理和备份恢复编排
 │  ├─ model/                    # 类型、设备配置、字段规则、校验和草稿仲裁
 │  ├─ storage/                  # localStorage 兼容层
-│  ├─ sync/                     # Supabase 云同步与离线操作队列
+│  ├─ sync/                     # 云同步、持久化离线操作队列与冲突保护
 │  └─ index.ts                  # 模块公开入口
 ├─ features/account/            # 账号面板、头像、导航偏好及其本地/云端同步
 ├─ features/auth/               # Supabase 登录、注册、邮箱验证、密码恢复与会话撤销
@@ -56,7 +56,7 @@ type InspectionRecord = {
 
 配置 Supabase 后，第一个登录账号会接管尚未归属账号的旧本地数据。不同账号在同一浏览器中使用独立缓存；云端记录按 UUID 合并，删除使用 `deleted_at` 墓碑，草稿按 `updated_at` 解决冲突。RLS 必须始终使用 `auth.uid() = user_id` 隔离数据。
 
-用户导航顺序保存在 `user_preferences`，本地缓存键按用户隔离；四个一级导航必须各出现一次，第一项同时是启动页面。头像存放在私有 `avatars` bucket 的 `{user_id}/` 目录，通过短期签名 URL 展示，上传前在浏览器裁切压缩为 256×256 WebP。
+用户导航顺序保存在 `user_preferences`，本地缓存键按用户隔离；四个一级导航必须各出现一次，第一项同时是启动页面。头像存放在私有 `avatars` bucket 的 `{user_id}/` 目录，通过短期签名 URL 展示，上传前在浏览器裁切压缩为 256×256 WebP。签名 URL 可按头像路径缓存在浏览器中，但只有在图片预加载成功后才能替换当前显示；无效缓存会被清除，并在启动、恢复联网或回到前台时重试。
 
 ## 巡检数据流与草稿仲裁
 
@@ -84,7 +84,15 @@ type InspectionRecord = {
 
 同步期间如果本地历史发生保存、删除或导入，控制器拒绝应用这次请求返回的旧列表并立即重新同步。在线账号订阅 `inspection_records` 和 `inspection_drafts` 的 Postgres Changes，其他设备写入后触发重新拉取；重连和回到前台仍会完整补查，实时通知不作为唯一数据来源。
 
+失败的历史同步按 1、3、10、30 秒退避重试，恢复联网或回到前台时立即重新启动。页面显示当前账号的队列待处理数量以及最近一次成功同步时间；草稿使用独立的版本仲裁流程，因此不计入历史操作队列数量。
+
 用户偏好的导航顺序和头像路径分别更新，避免修改导航时把另一设备的新头像路径写回旧值。离线导航变更在缓存中记录具体待同步字段；较旧请求返回时通过本地修订号阻止它覆盖后续操作。
+
+## 数据库迁移基线
+
+新环境必须按文件名顺序执行 `supabase/migrations/` 下的全部迁移。当前最后一份迁移是 `20260906170915_reliable_inspection_sync.sql`：它创建 `replace_inspection_records(uuid, jsonb)` 事务函数，对覆盖恢复的载荷、记录归属和重复 ID 做校验，并把 `inspection_records`、`inspection_drafts` 加入 `supabase_realtime` publication。函数使用调用者权限并仅向 `authenticated` 授予执行权；客户端仍受现有 RLS 限制。
+
+生产 Supabase 已执行该迁移；生产代码基线为 `cbb008c`。代码保留仅针对 `PGRST202`（数据库尚未暴露新 RPC）的滚动发布兼容路径，新建环境不应依赖该回退替代迁移。
 
 ## 密码修改与跨设备会话撤销
 
@@ -100,4 +108,5 @@ type InspectionRecord = {
 4. 页面视觉修改限定在对应业务组件，并继续消费 `globals.css` 中的语义令牌。
 5. 通用控件优先扩展 `components/ui`；只有巡检业务使用的组件留在 `features/inspection/components`。
 6. 草稿冲突规则修改在 `model/draft-reconciliation.ts` 完成，并同步扩展 `tests/draft-version.test.mjs`。
-7. 每次修改后运行 `npm run lint`、`npx tsc --noEmit`、`npm test` 和生产构建。
+7. 历史操作队列修改在 `sync/inspection-sync-queue.ts` 完成，并同步扩展 `tests/inspection-sync-queue.test.mjs`；网络读写与数据库映射继续留在 `sync/inspection-cloud-sync.ts`。
+8. 每次修改后运行 `npm run lint`、`npx tsc --noEmit`、`npm test` 和生产构建。

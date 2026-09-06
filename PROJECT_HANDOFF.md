@@ -1,12 +1,12 @@
 # 夜班巡检项目交接文档
 
-> 更新日期：2026-09-01
+> 更新日期：2026-09-06
 > 用途：让新的 Codex 对话快速接手当前代码，避免重新梳理已确认的纸表规则、回退已撤销的交互，或破坏已有浏览器数据。
 
 ## 1. 当前状态（60 秒接手）
 
-- 项目目录：`E:\codex\我的项目\夜班巡检`
-- 本地开发地址：<http://localhost:3000/>（本次会话的开发服务器已启动；新会话应自行执行 `npm run dev`）
+- 项目目录：仓库根目录（不同开发环境路径可以不同）
+- 本地开发地址：<http://localhost:3000/>（需要时在仓库根目录执行 `npm run dev`）
 - GitHub 仓库：<https://github.com/bijiuliu/xunjian>
 - GitHub Pages 目标地址：<https://bijiuliu.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
 - 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、Supabase Auth/Postgres、PWA manifest。
@@ -15,7 +15,7 @@
 - 主导航默认顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；用户可在账号面板拖动排序，第一项为启动页面并跨设备同步；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
 - 架构规范：`ARCHITECTURE.md`。
-- 当前部署基线：`7990710`（`Fix offline inspection draft reconciliation`），GitHub Pages 已成功部署。
+- 当前同步功能基线：PR #1 的合并提交 `cbb008c`（`提高离线与多设备同步可靠性`），GitHub Pages 构建与部署均已成功；后续纯文档提交不改变该运行时基线。
 
 当前代码已经完成模块化重构：
 
@@ -28,12 +28,15 @@ src/features/inspection/
 ├─ hooks/use-inspection-backup.ts        # 备份、恢复与撤销流程
 ├─ model/                                # 类型、配置、字段规则、保存校验和草稿仲裁（纯 TypeScript）
 ├─ storage/inspection-storage.ts         # 唯一的 localStorage 访问层
-└─ sync/inspection-cloud-sync.ts         # Supabase 同步、软删除与离线队列
+└─ sync/
+   ├─ inspection-cloud-sync.ts           # Supabase 读写、草稿仲裁与记录映射
+   └─ inspection-sync-queue.ts           # 按账号持久化的历史操作队列
 src/features/auth/                       # 登录、注册、邮箱验证、密码恢复与会话状态
 src/features/account/                    # 账号面板、私有头像与导航偏好同步
 src/lib/supabase/client.ts               # 浏览器 Supabase 客户端
 supabase/migrations/                     # 数据表与 RLS 策略
 tests/draft-version.test.mjs             # 草稿版本与跨设备冲突规则测试
+tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加保护测试
 ```
 
 `src/app/page.tsx` 不再承载巡检业务。新的客户端根组件是 `src/features/inspection/components/night-inspection-app.tsx`。
@@ -50,8 +53,10 @@ tests/draft-version.test.mjs             # 草稿版本与跨设备冲突规则�
 8. `src/features/inspection/hooks/use-inspection-history.ts`
 9. `src/features/inspection/hooks/use-inspection-backup.ts`
 10. `src/features/inspection/model/draft-reconciliation.ts`
-11. `src/features/inspection/sync/inspection-cloud-sync.ts`
-12. `next.config.ts` 与 `.github/workflows/deploy.yml`
+11. `src/features/inspection/sync/inspection-sync-queue.ts`
+12. `src/features/inspection/sync/inspection-cloud-sync.ts`
+13. `supabase/migrations/20260906170915_reliable_inspection_sync.sql`
+14. `next.config.ts` 与 `.github/workflows/deploy.yml`
 
 修改任何 Next.js 代码前，必须先阅读本机 `node_modules/next/dist/docs/` 下对应的 Next.js 16 文档，并遵循 `AGENTS.md`。
 
@@ -145,9 +150,12 @@ tests/draft-version.test.mjs             # 草稿版本与跨设备冲突规则�
 - 登录页忘记密码流程：发送 Supabase 重置邮件，邮件链接返回当前应用，收到 `PASSWORD_RECOVERY` 后设置并确认新密码。
 - 修改密码成功后调用 Supabase Auth 的 `signOut({ scope: "others" })` 撤销其他刷新会话，并写入 Realtime 撤销标记；当前设备保持登录，其他设备执行本地登出。
 - 首页右上角为用户头像唯一入口；邮箱、修改密码和退出登录只放在账号面板，不在首页重复展示。账号内修改密码必须填写当前密码验证，邮件找回密码流程不受此限制。
-- 云同步状态仍只放首页顶部，备份恢复仍只放历史记录；不要在账号面板增加重复入口。
-- 导航排序由 `features/account` 管理并同步到 `user_preferences`；必须校验四个 tab 各出现一次，第一项作为启动页面。
-- 头像存放于私有 `avatars` bucket 的当前用户目录，使用一小时签名 URL；不要改成公开 bucket。
+- 云同步状态仍只放首页顶部，备份恢复仍只放历史记录；不要在账号面板增加重复入口。状态区分同步中、离线待同步数量、失败待同步数量和最近同步时间。
+- 历史记录保存、删除、合并导入和覆盖恢复先进入按账号隔离的持久化队列；网络失败、刷新页面或同步期间追加操作都不能丢失待提交项。
+- 合并导入只新增 UUID 不存在的记录；覆盖恢复通过事务 RPC 恢复目标集合并软删除其余活动记录。普通保存和合并不得复活墓碑。
+- `inspection_records` 与 `inspection_drafts` 使用 Realtime 触发跨设备重新拉取；恢复联网和页面回到前台仍必须完整补查。
+- 导航排序由 `features/account` 管理并同步到 `user_preferences`；必须校验四个 tab 各出现一次，第一项作为启动页面。导航顺序与头像路径按字段分别更新，旧请求不得覆盖另一设备或后续操作的新值。
+- 头像存放于私有 `avatars` bucket 的当前用户目录，使用短期签名 URL；不要改成公开 bucket。只有图片预加载成功后才切换显示，无效缓存需清除并在启动、恢复联网或回到前台时重试。
 
 ### 历史记录管理区
 
@@ -208,10 +216,14 @@ type InspectionRecord = {
 - 第一个登录账号接管未归属账号的旧数据；同一浏览器中的不同账号使用隔离缓存。
 - 云端表使用 RLS 按 `auth.uid() = user_id` 隔离；记录采用软删除，草稿按更新时间解决冲突。
 - 草稿规则位于 `model/draft-reconciliation.ts`：较新版本胜出、相同版本采用云端副本、无版本旧草稿不能覆盖已有云端草稿。编辑时间戳必须严格递增；RPC `upsert_inspection_draft_if_newer` 是服务端的最终并发保护，返回 `false` 后客户端必须重新获取云端版本。
+- 历史操作队列键为 `night-inspection-sync-queue:{user_id}`，由 `sync/inspection-sync-queue.ts` 独占管理。每项操作有稳定 `operationId`，成功后只能移除当前完成项；执行期间加入的新操作必须保留。旧版无 ID 队列在读取时自动补齐 ID。
+- 普通记录写入和合并导入使用 insert-only 语义；`deleted_at` 墓碑优先，不能被普通同步复活。覆盖恢复是唯一允许恢复墓碑的入口，并优先调用 `replace_inspection_records` 事务 RPC。
+- 历史同步失败按 1、3、10、30 秒退避重试；在线恢复、页面回到前台和 Realtime 变更都会触发补查。同步请求期间若本地记录修订号改变，必须丢弃返回的旧列表并再次同步。
 - 跨设备会话撤销复用 `user_preferences`：`sessions_revoked_at` 记录撤销时间，`sessions_revoked_by` 记录发起会话 ID；当前会话据此保持登录，其他会话退出。
 - 仓库迁移文件为 `supabase/migrations/20260830040000_session_revocation_realtime.sql`；生产 Supabase 已执行并登记为 `20260830110531_session_revocation_realtime`。该迁移只新增两个可空字段并把 `user_preferences` 加入 `supabase_realtime` publication，不改动现有用户、巡检、头像或导航数据。
 - `supabase/migrations/20260831101013_protect_drafts_and_add_recorded_at.sql` 为历史记录增加 `recorded_at`，并提供受 Auth 与参数校验保护的草稿条件写入 RPC。新环境必须按文件名顺序执行到该迁移。
 - `supabase/migrations/20260901043209_revoke_rls_auto_enable_api_execution.sql` 撤销 `PUBLIC`、`anon`、`authenticated`、`service_role` 对 `public.rls_auto_enable()` 的直接执行权。`ensure_rls` 事件触发器继续由 `postgres` 自动执行；不要为消除告警而删除该触发器或改成 `SECURITY INVOKER`。
+- `supabase/migrations/20260906170915_reliable_inspection_sync.sql` 创建 `replace_inspection_records(uuid, jsonb)` 事务 RPC，对载荷和重复 ID 做校验，并把 `inspection_records`、`inspection_drafts` 加入 `supabase_realtime` publication。生产 Supabase 已执行并登记为 `20260906172820_reliable_inspection_sync`；新环境必须执行仓库中的迁移文件，不能依赖客户端滚动发布回退。
 - 当前只有 manifest，没有可靠 Service Worker 离线缓存；不要宣称“完全离线”。
 
 ## 6. 架构与部署约束
@@ -248,7 +260,7 @@ allowedDevOrigins: ["127.0.0.1", "localhost"]
 
 1. 快速连续点击一级导航时，选中标签和内容偶尔错位。根因与带退出等待的 `AnimatePresence mode="wait"` 有关；不能简单删除动画，必须同时保留细腻切换体验。
 2. 一级板块切换及保存/删除 Dialog 尚未完整遵从“减少动态效果”。
-3. 生产 Supabase 已完成当前全部迁移；新建或更换 Supabase 项目时仍需按文件名顺序执行 `supabase/migrations/`，并配置环境变量和 Authentication URL。仓库本身不包含凭据。
+3. 生产 Supabase 已完成包括 `20260906170915_reliable_inspection_sync.sql` 在内的全部迁移；新建或更换 Supabase 项目时仍需按文件名顺序执行 `supabase/migrations/`，并配置环境变量和 Authentication URL。仓库本身不包含凭据。
 4. PWA manifest 不等于完整离线能力，尚未实现 Service Worker 静态资源缓存。
 
 ### 尚未实现
@@ -274,7 +286,7 @@ $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```
 
-截至 2026-09-01，部署基线 `7990710` 已通过 GitHub Pages 生产构建；当前测试集包含 27 项草稿、字段规则、保存校验、备份兼容、存储兼容和导航偏好测试。
+截至 2026-09-06，同步功能基线 `cbb008c` 已通过 GitHub Pages 的构建与部署；当前测试集包含 35 项头像恢复、草稿版本、字段规则、保存校验、备份兼容、存储兼容、历史同步队列和导航偏好测试。
 
 涉及交互时至少手工检查：
 
@@ -283,16 +295,22 @@ npm run build
 - 数值输入最多两位；卡片清空仅影响当前卡片；顶部提示文案正确。
 - 刷新后草稿、泵号、状态和当前皮带子板块能恢复；新建后内容为空且回到 `SZ101`，另一设备同步后也应得到空白草稿。
 - 两台设备同时修改草稿时较新版本胜出；旧版无时间戳缓存、较旧 RPC 写入和相同时间版本都不能覆盖已确认的云端新版本。
+- 断网保存、删除或导入后，首页显示正确的待同步数量；刷新页面后队列仍在，恢复联网后按顺序提交并归零。
+- 同步进行期间继续保存或删除时，新操作不能被前一个请求的完成确认清除，旧同步结果也不能覆盖最新本地列表。
+- 合并导入不删除云端其他设备记录且不复活墓碑；覆盖恢复通过事务得到与备份一致的活动记录集合。
+- 两台设备新增、删除记录或修改草稿时，另一台由 Realtime 触发重新拉取；断线重连和回到前台后也能补齐变化。
 - 保存校验能区分未选泵号与空数值；保存后汇总顺序、日期时间与历史持久化正确。
 - 历史列表到详情及返回方向正确；详情底部操作栏始终相对视口稳定。
 - 历史管理模式下，删除区为列表内吸底；末张卡片只在靠近删除区时轻微渐隐，删除按钮不遮挡或抢占卡片点击。
 - GitHub Pages 构建时 `/xunjian` 子路径资源正确。
 - 两台设备登录同一账号，在其中一台修改密码后，当前设备保持登录；另一台在线时及时退出，离线或后台时在恢复联网/回到前台后退出。
+- 一台设备修改导航、另一台更新头像时，两项设置都能保留；旧异步响应不能把较新的头像路径或导航顺序覆盖回去。
+- 头像签名 URL 失效或首次加载失败时继续显示当前可用头像，并在启动、恢复联网或回到前台时重试。
 
 ## 9. 新对话直接粘贴
 
 ```text
-继续开发 E:\codex\我的项目\夜班巡检。
+继续开发夜班巡检仓库 `https://github.com/bijiuliu/xunjian`。
 
 先完整阅读：
 1. AGENTS.md
@@ -302,6 +320,9 @@ npm run build
 5. src/app/page.tsx
 6. src/features/inspection/components/night-inspection-app.tsx
 7. src/features/inspection/hooks/use-inspection-controller.ts
+8. src/features/inspection/sync/inspection-sync-queue.ts
+9. src/features/inspection/sync/inspection-cloud-sync.ts
+10. supabase/migrations/20260906170915_reliable_inspection_sync.sql
 
 不要重新设计、不要回退已完成内容。业务规则、样式和数据兼容以当前源码为最终依据；先说明当前状态，再执行我的新需求。
 ```

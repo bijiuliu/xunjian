@@ -95,3 +95,11 @@ npm run build
 登录页支持“忘记密码”：用户提交邮箱后，Supabase 会发送重置邮件；打开邮件链接会回到应用并显示设置新密码界面。要让生产环境的验证和重置链接正确返回 GitHub Pages，请在 Authentication → URL Configuration 中将 Site URL 设为 `https://bijiuliu.github.io/xunjian/`，并把该完整地址加入 Redirect URLs。本地调试时再额外加入 `http://localhost:3000/`。
 
 账号内修改密码和邮件找回重设密码后，应用保留当前设备登录并撤销其他设备会话。在线设备通过 `user_preferences` 的 Realtime 变更及时退出；离线或后台设备会在恢复联网或页面回到前台时检查撤销标记并退出。
+
+
+## 图标资源规范
+
+- 登录、注册和找回密码页使用内嵌的 4096×4096 透明品牌图标，不发起外部图片请求；重置密码成功页继续使用钥匙图标。
+- PWA、Apple Touch Icon 与 favicon 使用本项目自己的不透明白色直角底图标，不能用透明登录图标代替。
+- Web App Manifest 使用独立 `id`，图标 URL 带 `xunjian` 专属版本号，避免与同一 GitHub Pages 域名下的其他应用混淆或命中旧缓存。
+- 禁止引用其他仓库的图片 URL，也禁止其他项目引用本仓库的 `/xunjian/` 图标路径。

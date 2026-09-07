@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, CircleCheck, KeyRound } from "lucide-react";
 import { toast } from "sonner";
-import { BrandMark } from "@/components/brand-mark";
+import { BrandMark } from "@/components/brand-mark-4096";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {

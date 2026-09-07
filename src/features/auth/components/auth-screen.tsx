@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import Image from "next/image";
 import { ArrowLeft, CircleCheck, KeyRound } from "lucide-react";
 import { toast } from "sonner";
-import appLogo from "@/assets/night-inspection-logo.png";
+import { BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -179,12 +178,7 @@ export function AuthScreen({
               <KeyRound className="size-7" />
             </div>
           ) : (
-            <Image
-              src={appLogo}
-              alt="夜班巡检"
-              priority
-              className="mx-auto mb-4 size-16 object-contain"
-            />
+            <BrandMark className="mx-auto mb-4 size-16" />
           )}
           <h1 className="text-3xl font-black tracking-tight">
             {mode === "reset-password" ? "设置新密码" : "夜班巡检"}

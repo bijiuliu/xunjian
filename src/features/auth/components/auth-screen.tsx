@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowLeft, CircleCheck, KeyRound, ShieldCheck } from "lucide-react";
+import Image from "next/image";
+import { ArrowLeft, CircleCheck, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+import appLogo from "@/assets/night-inspection-logo.png";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -172,13 +174,18 @@ export function AuthScreen({
     <main className="mx-auto flex min-h-svh max-w-md items-start bg-background px-page py-[max(2rem,env(safe-area-inset-top))]">
       <div className="w-full">
         <div className="mb-7 text-center">
-          <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-card bg-primary text-primary-foreground shadow-primary">
-            {mode === "reset-password" ? (
+          {mode === "reset-password" ? (
+            <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-card bg-primary text-primary-foreground shadow-primary">
               <KeyRound className="size-7" />
-            ) : (
-              <ShieldCheck className="size-7" />
-            )}
-          </div>
+            </div>
+          ) : (
+            <Image
+              src={appLogo}
+              alt="夜班巡检"
+              priority
+              className="mx-auto mb-4 size-16 object-contain"
+            />
+          )}
           <h1 className="text-3xl font-black tracking-tight">
             {mode === "reset-password" ? "设置新密码" : "夜班巡检"}
           </h1>

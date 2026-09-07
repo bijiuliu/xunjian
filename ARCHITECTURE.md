@@ -90,6 +90,8 @@ type InspectionRecord = {
 
 ## 数据库迁移基线
 
+同步动画：Realtime 通知及同步期间排队的补查调用后台模式，不重新设置 `syncing`，避免本设备写入回推造成第二次旋转。初次加载、主动上传、手动同步和错误重试仍显示同步状态；后台失败仍进入错误处理，数据仲裁和补查不受影响。
+
 新环境必须按文件名顺序执行 `supabase/migrations/` 下的全部迁移。当前最后一份迁移是 `20260906170915_reliable_inspection_sync.sql`：它创建 `replace_inspection_records(uuid, jsonb)` 事务函数，对覆盖恢复的载荷、记录归属和重复 ID 做校验，并把 `inspection_records`、`inspection_drafts` 加入 `supabase_realtime` publication。函数使用调用者权限并仅向 `authenticated` 授予执行权；客户端仍受现有 RLS 限制。
 
 生产 Supabase 已执行该迁移；生产代码基线为 `cbb008c`。代码保留仅针对 `PGRST202`（数据库尚未暴露新 RPC）的滚动发布兼容路径，新建环境不应依赖该回退替代迁移。

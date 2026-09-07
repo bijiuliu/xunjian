@@ -58,7 +58,7 @@ export function useInspectionController(userId?: string) {
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const syncInFlight = useRef(false);
-  const syncNowRef = useRef<() => Promise<void>>(async () => undefined);
+  const syncNowRef = useRef<(background?: boolean) => Promise<void>>(async () => undefined);
   const syncRerunRequested = useRef(false);
   const recordsRevision = useRef(0);
   const retryAttempt = useRef(0);
@@ -130,8 +130,11 @@ export function useInspectionController(userId?: string) {
   });
   const initializeBackupFromStorage = backup.actions.initializeFromStorage;
 
-  const syncNow = useCallback(async () => {
+  const syncNow = useCallback(async (background = false) => {
     if (!userId) return;
+    // Realtime echoes still reconcile data, but must not restart the spinner.
+    // Explicit requests can promote an already-running background check.
+    if (!background) setSyncStatus("syncing");
     if (syncInFlight.current) {
       syncRerunRequested.current = true;
       return;
@@ -140,7 +143,6 @@ export function useInspectionController(userId?: string) {
     syncRerunRequested.current = false;
     const startingDraftRevision = draftRevision.current;
     const startingRecordsRevision = recordsRevision.current;
-    setSyncStatus("syncing");
     setPendingSyncCount(getPendingInspectionSyncCount(userId));
     try {
       const localState = loadInspectionState();
@@ -184,7 +186,7 @@ export function useInspectionController(userId?: string) {
       syncInFlight.current = false;
       if (syncRerunRequested.current) {
         syncRerunRequested.current = false;
-        window.setTimeout(() => void syncNowRef.current(), 0);
+        window.setTimeout(() => void syncNowRef.current(true), 0);
       }
     }
   }, [markCloudFailure, userId]);
@@ -299,7 +301,7 @@ export function useInspectionController(userId?: string) {
     let refreshTimer = 0;
     const refresh = () => {
       window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void syncNow(), 200);
+      refreshTimer = window.setTimeout(() => void syncNow(true), 200);
     };
     const channel = supabase
       .channel(`inspection-sync:${userId}`)

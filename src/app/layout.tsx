@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: `${basePath}/favicon.ico?v=xunjian-20260908`,
+        url: `${basePath}/xunjian-favicon-20260908-r2.ico`,
         sizes: "16x16 32x32 48x48",
         type: "image/x-icon",
       },
@@ -28,7 +28,7 @@ export const metadata: Metadata = {
     ],
     apple: [
       {
-        url: `${basePath}/apple-touch-icon.png?v=xunjian-20260908`,
+        url: `${basePath}/xunjian-apple-touch-icon-20260908-r2.png`,
         sizes: "180x180",
         type: "image/png",
       },

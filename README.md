@@ -102,5 +102,6 @@ npm run build
 - 登录、注册和找回密码页使用内嵌的 4096×4096 透明品牌图标，不发起外部图片请求；重置密码成功页继续使用钥匙图标。
 - PWA、Apple Touch Icon 与 favicon 使用本项目自己的不透明白色直角底图标，不能用透明登录图标代替。
 - Safari 兼容入口固定为仓库子路径下的 `favicon.ico` 与 `apple-touch-icon.png`；Next.js 文件约定图标已停用，所有页面由根布局统一声明同一组图标。
+- Safari 收藏入口显式引用带版本的实体文件名，不能只给通用文件名添加查询参数；通用文件仅作为浏览器自动探测的兜底。
 - PWA 图标固定使用 `public/icons/xunjian-pwa-{192,512,1024}.png`；Web App Manifest 保持独立 `id`、`start_url` 与 `scope`。
 - 禁止引用其他仓库或以忽略 `basePath` 的根路径加载资源；替换图标后运行 `node scripts/check-icons.mjs`。

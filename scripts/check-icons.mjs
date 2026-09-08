@@ -11,7 +11,7 @@ const manifest = JSON.parse(manifestText);
 
 assert.doesNotMatch(`${layout}\n${manifestText}`, /time-calculator|时间计算器/i, "cross-project icon reference found");
 assert.match(layout, /manifest: `\$\{basePath\}\/manifest\.webmanifest`/);
-for (const path of ["favicon.ico", "apple-touch-icon.png", "icons/xunjian-pwa-192.png", "icons/xunjian-pwa-512.png"]) {
+for (const path of ["xunjian-favicon-20260908-r2.ico", "xunjian-apple-touch-icon-20260908-r2.png", "icons/xunjian-pwa-192.png", "icons/xunjian-pwa-512.png"]) {
   assert.ok(layout.includes(`${basePathToken(path)}`), `${path} is not explicitly declared in root metadata`);
 }
 
@@ -31,12 +31,24 @@ const dimensions = (path) => {
 
 const pngContract = new Map([
   ["public/apple-touch-icon.png", [180, 180]],
+  ["public/xunjian-apple-touch-icon-20260908-r2.png", [180, 180]],
   ["public/icons/xunjian-pwa-192.png", [192, 192]],
   ["public/icons/xunjian-pwa-512.png", [512, 512]],
   ["public/icons/xunjian-pwa-1024.png", [1024, 1024]],
 ]);
 
 assert.ok(existsSync(resolve(root, "public/favicon.ico")), "public/favicon.ico is missing");
+assert.ok(existsSync(resolve(root, "public/xunjian-favicon-20260908-r2.ico")), "versioned Safari favicon is missing");
+assert.deepEqual(
+  readFileSync(resolve(root, "public/xunjian-favicon-20260908-r2.ico")),
+  readFileSync(resolve(root, "public/favicon.ico")),
+  "versioned Safari favicon differs from the verified fallback",
+);
+assert.deepEqual(
+  readFileSync(resolve(root, "public/xunjian-apple-touch-icon-20260908-r2.png")),
+  readFileSync(resolve(root, "public/apple-touch-icon.png")),
+  "versioned Apple Touch Icon differs from the verified fallback",
+);
 for (const [path, expected] of pngContract) assert.deepEqual(dimensions(path), expected, `${path} has wrong dimensions`);
 
 assert.equal(manifest.id, "./");

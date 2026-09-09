@@ -34,7 +34,7 @@ src/features/inspection/
    └─ inspection-sync-queue.ts           # 按账号持久化的历史操作队列
 src/features/auth/                       # 登录、注册、邮箱验证、密码恢复与会话状态
 src/features/account/                    # 账号面板、私有头像与导航偏好同步
-src/assets/                              # 登录页透明品牌标志
+src/assets/                              # 独立品牌导出（当前不由运行时代码加载）
 src/lib/supabase/client.ts               # 浏览器 Supabase 客户端
 public/icons/                            # PWA 普通与 Maskable 图标
 design/brand/                            # 品牌母版、规范和历史设计归档
@@ -150,7 +150,7 @@ tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加�
 - 历史列表、详情汇总、批量管理、二次确认、详情删除。
 - 汇总顺序：皮带区域 → 8#冲渣 → 9#冲渣。
 - PWA manifest、iPhone Safe Area、GitHub Pages 静态导出。
-- 品牌图标已统一为新矢量图形：登录页使用透明 SVG，浏览器和 Apple 图标使用白底版本；PWA 普通图标与 Maskable 图标分离，旧黑底眼形图标已从当前工作区删除。
+- 品牌图标已统一为新矢量图形：登录页使用组件内嵌透明 SVG，浏览器和 Apple 图标使用白底版本；PWA 普通图标与 Maskable 图标分离，旧黑底眼形图标已从当前工作区删除。
 - 登录与注册共用同一套移动端表单布局；密码输入支持显隐，注册和重置密码均要求二次确认。
 - 注册后提供邮箱验证状态与 60 秒重发冷却；已注册账号会在邮箱输入框抖动后显示行内提示和忘记密码入口，不使用易被误解为注册成功的完成页。
 - 登录未验证邮箱时可直接重发验证邮件；认证错误优先按 Supabase `error.code` 映射，不依赖英文错误文案。
@@ -176,7 +176,7 @@ tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加�
 ### 视觉与触控约束
 
 - 品牌图形只修改 `design/brand/night-inspection-master.svg`，并按 `design/brand/README.md` 同步导出生产资源。不要把 `design/brand/archive/` 中的历史版本接入页面或 manifest。
-- 登录页品牌图标是装饰图片，紧邻文字标题时保持空 `alt`；功能图标继续使用 Lucide 并提供对应语义。
+- 登录页内嵌品牌图形属于装饰内容，紧邻文字标题时使用 `aria-hidden`；功能图标继续使用 Lucide 并提供对应语义。
 
 - 只做手机端：浅灰页面、白色圆角卡片、蓝色主要操作、适度阴影。
 - 首页头部保持深色渐变：`from-slate-950 via-slate-900 to-blue-950`。
@@ -249,7 +249,7 @@ components → hooks → model
 ```
 
 - `src/app` 只放路由、布局和全局样式。
-- `src/app/icon.svg`、`src/app/apple-icon.png` 和 `src/app/favicon.ico` 是 Next.js 元数据资源；`src/assets/night-inspection-logo.svg` 仅用于页面内品牌展示。
+- `src/app/icon.svg`、`src/app/apple-icon.png` 和 `src/app/favicon.ico` 是 Next.js 元数据资源；登录页品牌图形以内嵌 `AuthLogo` 组件呈现，`src/assets/night-inspection-logo.svg` 仅作为独立透明导出保留，不参与运行时加载。
 - manifest 只引用 `public/icons/night-inspection-192-v2.png`、`night-inspection-512-v2.png` 和独立的 `night-inspection-maskable-512-v2.png`。Maskable 图标的重要内容必须处于中央 40% 半径安全圆内。
 - `model` 保持纯 TypeScript，不依赖 React、DOM、Framer Motion 或浏览器 API。
 - `components/ui` 不能依赖业务模块。

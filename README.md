@@ -33,7 +33,7 @@ tests/                           # 纯业务规则测试
 ## 品牌图标与 PWA 资源
 
 - 唯一设计母版为 `design/brand/night-inspection-master.svg`，使用透明背景、sRGB 色值和无描边 Bézier 路径。
-- 登录页使用 `src/assets/night-inspection-logo.svg`；该图片紧邻应用标题，作为装饰图片使用空 `alt`。
+- 登录页品牌图形以内嵌 SVG 组件 `AuthLogo` 定义在 `src/features/auth/components/auth-screen.tsx`，紧邻应用标题并使用 `aria-hidden`，不产生额外图片请求或重复朗读。
 - Next.js 元数据图标为白底 `src/app/icon.svg`；Apple Web Clip 与 favicon 分别使用 `src/app/apple-icon.png` 和 `src/app/favicon.ico`。
 - PWA 普通图标与 Maskable 图标分开声明。Maskable 图标使用不透明背景，全部品牌图形必须位于画布中心、半径为边长 40% 的安全圆内。
 - 生产图标只使用 SVG、PNG 或 ICO，不使用 JPEG；修改母版后必须同步生成并检查全部尺寸。

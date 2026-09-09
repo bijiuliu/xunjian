@@ -57,7 +57,7 @@
 
 - 新增 `design/brand/night-inspection-master.svg` 作为唯一设计母版，并在 `design/brand/README.md` 固定色值、几何、导出矩阵和验收规则。
 - Next.js 应用图标由 `src/app/icon.png` 切换为白底 `src/app/icon.svg`；同步更新 `apple-icon.png` 和包含 16/32/48/64 尺寸的 favicon。
-- 登录页用透明 `src/assets/night-inspection-logo.svg` 替换原盾牌品牌占位；重置密码的功能性钥匙图标继续使用 Lucide。
+- 登录页用 `src/features/auth/components/auth-screen.tsx` 内的透明内嵌 SVG 组件 `AuthLogo` 替换原盾牌品牌占位；该装饰图形使用 `aria-hidden`，重置密码的功能性钥匙图标继续使用 Lucide。
 - manifest 改用带版本文件名的 192/512 普通图标，并新增独立的 512 Maskable 图标。Maskable 全部品牌像素的最大中心半径为 184.15px，小于 512px 画布要求的 204.8px 安全半径。
 - 项目原有黑底眼形旧图标已从当前工作区删除；本次新品牌图形的过程版本保存在 `design/brand/archive/`，不参与运行时构建。旧图标仍存在于 Git 历史，本次没有改写仓库历史。
 - 迁移未增加依赖，未修改 localStorage、Supabase、巡检规则、Safe Area、Next 配置或部署工作流。

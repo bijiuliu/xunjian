@@ -68,6 +68,24 @@ export function getInitialUserPreferences(userId: string): UserPreferences {
   return loadCachedUserPreferences(userId) ?? createDefaultPreferences();
 }
 
+/** An avatar commit must not acknowledge a navigation edit that is still offline. */
+export function cachePreferencesAfterAvatarCommit(
+  userId: string,
+  preferences: UserPreferences,
+) {
+  const cached = loadCachedUserPreferences(userId);
+  const navigationPending = Boolean(
+    cached?.pending &&
+      (!cached.pendingFields || cached.pendingFields.includes("navigationOrder")),
+  );
+  saveCachedUserPreferences(userId, {
+    ...preferences,
+    pending: navigationPending,
+    ...(navigationPending ? { pendingFields: ["navigationOrder" as const] } : {}),
+  });
+  return navigationPending;
+}
+
 
 export function loadCachedAvatarUrl(userId: string, path: string | null) {
   if (!path) return null;

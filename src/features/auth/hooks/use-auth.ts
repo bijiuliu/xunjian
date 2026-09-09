@@ -7,7 +7,7 @@ import {
   isSupabaseConfigured,
 } from "@/lib/supabase/client";
 
-export type AuthStatus =
+type AuthStatus =
   | "loading"
   | "signed-out"
   | "signed-in"

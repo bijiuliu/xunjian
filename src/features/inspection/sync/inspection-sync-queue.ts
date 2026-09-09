@@ -1,5 +1,5 @@
 import type { InspectionRecord } from "../model/types";
-import { isInspectionRecord } from "../storage/inspection-backup";
+import { isInspectionRecord } from "../model/validation";
 
 const SYNC_QUEUE_PREFIX = "night-inspection-sync-queue:";
 

@@ -110,5 +110,14 @@ type InspectionRecord = {
 4. 页面视觉修改限定在对应业务组件，并继续消费 `globals.css` 中的语义令牌。
 5. 通用控件优先扩展 `components/ui`；只有巡检业务使用的组件留在 `features/inspection/components`。
 6. 草稿冲突规则修改在 `model/draft-reconciliation.ts` 完成，并同步扩展 `tests/draft-version.test.mjs`。
-7. 历史操作队列修改在 `sync/inspection-sync-queue.ts` 完成，并同步扩展 `tests/inspection-sync-queue.test.mjs`；网络读写与数据库映射继续留在 `sync/inspection-cloud-sync.ts`。
+7. 历史操作队列修改在 `sync/inspection-sync-queue.ts` 完成，并同步扩展 `tests/inspection-sync-queue.test.mjs`；网络读写留在 `sync/inspection-cloud-sync.ts`，纯数据库映射和行校验在 `sync/inspection-cloud-mapping.ts`。
 8. 每次修改后运行 `npm run lint`、`npx tsc --noEmit`、`npm test` 和生产构建。
+
+## 职责扩展点
+
+- `use-inspection-controller` 继续持有草稿/记录修订号、请求互斥、补跑、上传防抖和重试状态；`use-inspection-sync-events` 仅负责 online、visibilitychange、Realtime 的注册与清理，回调仍进入控制器的同一个 `syncNow`。新增外部触发源进入这个内部 hook，不另建同步状态。
+- `inspection-storage.getStoredInspectionDraft` 统一从归一化存储状态重建草稿，保留 hasDraft、legacy 无版本和空白版本的区别；`model/validation` 提供备份与云端共同使用的领域载荷校验。格式升级仍从 storage 开始。
+- `inspection-cloud-mapping` 只转换字段，不决定新增、恢复或删除策略。insert-only、墓碑、事务恢复和 PGRST202 回退仍由原同步模块控制。
+- `account/components/navigation-order-editor` 拥有排序草稿、长按拖动和提交；`avatar-visual` 供账号菜单与首页共用。业务组件不进入公共 UI。
+- `account/sync/prepare-avatar` 只处理浏览器图片读取、裁切和压缩；`use-user-preferences` 继续持有 revision、signed URL 恢复与字段同步编排。头像提交后的导航 pending 缓存由 `storage/user-preferences-storage.ts` 的 `cachePreferencesAfterAvatarCommit` 统一保留。
+- Auth 表单/错误/校验已有稳定分工，历史和备份已有独立 hook 与局部面板，无需为行数继续拆分。完整审计与验证边界见 `GOVERNANCE.md`。

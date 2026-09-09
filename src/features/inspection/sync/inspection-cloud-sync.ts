@@ -1,22 +1,26 @@
 import { getSupabaseClient } from "@/lib/supabase/client";
-import { isBeltId } from "../model/field-rules";
 import {
   parseDraftPushResult,
   reconcileInspectionDraft,
   type DraftPushResult,
 } from "../model/draft-reconciliation";
-import { getInspectionRecordCreatedAt } from "../model/record-time";
 import type {
-  BeltId,
   InspectionRecord,
-  InspectionValues,
   VersionedInspectionDraft,
 } from "../model/types";
+import { isInspectionRecord } from "../model/validation";
+import { sortInspectionRecords } from "../storage/inspection-backup";
 import {
-  isInspectionRecord,
-  sortInspectionRecords,
-} from "../storage/inspection-backup";
-import type { StoredInspectionState } from "../storage/inspection-storage";
+  getStoredInspectionDraft,
+  type StoredInspectionState,
+} from "../storage/inspection-storage";
+import {
+  fromCloudRecord,
+  isCloudDraft,
+  isCloudRecord,
+  toCloudRecord,
+  type CloudInspectionRecord,
+} from "./inspection-cloud-mapping";
 import {
   enqueueInspectionSyncOperation,
   flushInspectionSyncQueue,
@@ -26,26 +30,7 @@ import {
 
 const CLOUD_RECORD_PAGE_SIZE = 500;
 
-type CloudInspectionRecord = {
-  id: string;
-  user_id: string;
-  inspection_date: string;
-  inspection_time: string;
-  recorded_at: string | null;
-  values: InspectionValues;
-  created_at: string;
-  updated_at: string;
-  deleted_at: string | null;
-};
-
-type CloudInspectionDraft = {
-  user_id: string;
-  values: InspectionValues;
-  belt_tab: BeltId;
-  updated_at: string;
-};
-
-export type CloudSyncResult = {
+type CloudSyncResult = {
   records: InspectionRecord[];
   draft: VersionedInspectionDraft | null;
 };
@@ -129,18 +114,8 @@ async function reconcileDraft(
   userId: string,
   localState: StoredInspectionState,
 ): Promise<VersionedInspectionDraft | null> {
-  const localDraft = localState.hasDraft
-    ? {
-        values: localState.values,
-        beltTab: localState.beltTab,
-        ...(localState.draftUpdatedAt
-          ? { updatedAt: localState.draftUpdatedAt }
-          : {}),
-      }
-    : null;
-
   return reconcileInspectionDraft({
-    localDraft,
+    localDraft: getStoredInspectionDraft(localState),
     fetchCloud: () => fetchCloudDraft(userId),
     pushLocal: (draft) => pushInspectionDraft(userId, draft),
   });
@@ -196,13 +171,7 @@ async function applyReplacement(userId: string, records: InspectionRecord[]) {
   const supabase = requireSupabase();
   const { error } = await supabase.rpc("replace_inspection_records", {
     p_user_id: userId,
-    p_records: records.map((record) => ({
-      id: record.id,
-      inspection_date: record.date,
-      inspection_time: record.time,
-      recorded_at: getInspectionRecordCreatedAt(record),
-      values: record.values,
-    })),
+    p_records: records.map(toCloudRecord),
   });
   if (!error) return;
   if (error.code !== "PGRST202") throw error;
@@ -260,12 +229,8 @@ async function upsertRecords(userId: string, records: InspectionRecord[]) {
   const supabase = requireSupabase();
   const { error } = await supabase.from("inspection_records").upsert(
     records.map((record) => ({
-      id: record.id,
+      ...toCloudRecord(record),
       user_id: userId,
-      inspection_date: record.date,
-      inspection_time: record.time,
-      recorded_at: getInspectionRecordCreatedAt(record),
-      values: record.values,
     })),
     { onConflict: "user_id,id", ignoreDuplicates: true },
   );
@@ -278,12 +243,8 @@ async function restoreRecords(userId: string, records: InspectionRecord[]) {
   const now = new Date().toISOString();
   const { error } = await supabase.from("inspection_records").upsert(
     records.map((record) => ({
-      id: record.id,
+      ...toCloudRecord(record),
       user_id: userId,
-      inspection_date: record.date,
-      inspection_time: record.time,
-      recorded_at: getInspectionRecordCreatedAt(record),
-      values: record.values,
       updated_at: now,
       deleted_at: null,
     })),
@@ -304,57 +265,8 @@ async function softDeleteRecords(userId: string, ids: string[]) {
   if (error) throw error;
 }
 
-function fromCloudRecord(row: CloudInspectionRecord): InspectionRecord {
-  return {
-    id: row.id,
-    date: row.inspection_date,
-    time: row.inspection_time,
-    createdAt:
-      row.recorded_at ??
-      getInspectionRecordCreatedAt({ time: row.inspection_time }) ??
-      row.created_at,
-    values: row.values,
-  };
-}
-
 function requireSupabase() {
   const supabase = getSupabaseClient();
   if (!supabase) throw new Error("Supabase 尚未配置");
   return supabase;
-}
-
-function isCloudRecord(value: unknown): value is CloudInspectionRecord {
-  if (!value || typeof value !== "object") return false;
-  const row = value as Partial<CloudInspectionRecord>;
-  return (
-    typeof row.id === "string" &&
-    typeof row.user_id === "string" &&
-    typeof row.inspection_date === "string" &&
-    typeof row.inspection_time === "string" &&
-    (row.recorded_at === null || typeof row.recorded_at === "string") &&
-    isInspectionValues(row.values) &&
-    typeof row.created_at === "string" &&
-    typeof row.updated_at === "string" &&
-    (row.deleted_at === null || typeof row.deleted_at === "string")
-  );
-}
-
-function isCloudDraft(value: unknown): value is CloudInspectionDraft {
-  if (!value || typeof value !== "object") return false;
-  const row = value as Partial<CloudInspectionDraft>;
-  return (
-    typeof row.user_id === "string" &&
-    isInspectionValues(row.values) &&
-    isBeltId(row.belt_tab) &&
-    typeof row.updated_at === "string"
-  );
-}
-
-function isInspectionValues(value: unknown): value is InspectionValues {
-  return (
-    value !== null &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Object.values(value).every((fieldValue) => typeof fieldValue === "string")
-  );
 }

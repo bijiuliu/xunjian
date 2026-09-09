@@ -5,7 +5,39 @@ import {
   getBeltPoints,
   getVisibleBeltItems,
 } from "./field-rules";
-import type { InspectionValues, PumpAreaId, SaveValidation } from "./types";
+import type {
+  InspectionRecord,
+  InspectionValues,
+  PumpAreaId,
+  SaveValidation,
+} from "./types";
+
+export function isInspectionValues(value: unknown): value is InspectionValues {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    Object.values(value).every((fieldValue) => typeof fieldValue === "string")
+  );
+}
+
+export function isInspectionRecord(value: unknown): value is InspectionRecord {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Partial<InspectionRecord>;
+
+  return (
+    typeof record.id === "string" &&
+    record.id.trim().length > 0 &&
+    typeof record.date === "string" &&
+    record.date.trim().length > 0 &&
+    typeof record.time === "string" &&
+    record.time.trim().length > 0 &&
+    (!("createdAt" in record) ||
+      (typeof record.createdAt === "string" &&
+        !Number.isNaN(Date.parse(record.createdAt)))) &&
+    isInspectionValues(record.values)
+  );
+}
 
 export function validateInspection(values: InspectionValues): SaveValidation {
   const unselectedPumps: string[] = [];

@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { getSupabaseClient } from "@/lib/supabase/client";
 import { createNextDraftUpdatedAt } from "../model/draft-reconciliation";
 import {
   getBeltItemKeys,
+  getBeltItemTitle,
   getPumpCardKeys,
   selectPump,
 } from "../model/field-rules";
@@ -20,6 +20,7 @@ import type {
 } from "../model/types";
 import {
   clearInspectionDraft,
+  getStoredInspectionDraft,
   loadInspectionState,
   prepareStorageForUser,
   saveCurrentAccountCache,
@@ -33,6 +34,7 @@ import {
 } from "../sync/inspection-cloud-sync";
 import { useInspectionBackup } from "./use-inspection-backup";
 import { useInspectionHistory } from "./use-inspection-history";
+import { useInspectionSyncEvents } from "./use-inspection-sync-events";
 
 export type InspectionSyncStatus =
   | "local"
@@ -205,15 +207,7 @@ export function useInspectionController(userId?: string) {
       setRecords(stored.records);
       setValues(stored.values);
       setBeltTab(stored.beltTab);
-      draftSnapshot.current = stored.hasDraft
-        ? {
-            values: stored.values,
-            beltTab: stored.beltTab,
-            ...(stored.draftUpdatedAt
-              ? { updatedAt: stored.draftUpdatedAt }
-              : {}),
-          }
-        : null;
+      draftSnapshot.current = getStoredInspectionDraft(stored);
       confirmedDraftRevision.current = userId ? -1 : draftRevision.current;
       recordsRevision.current = 0;
       setPendingSyncCount(
@@ -280,58 +274,7 @@ export function useInspectionController(userId?: string) {
     return () => window.clearTimeout(timer);
   }, [syncNow, syncStatus, userId]);
 
-  useEffect(() => {
-    if (!userId || !draftReady) return;
-    const handleOnline = () => void syncNow();
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") void syncNow();
-    };
-    window.addEventListener("online", handleOnline);
-    document.addEventListener("visibilitychange", handleVisibility);
-    return () => {
-      window.removeEventListener("online", handleOnline);
-      document.removeEventListener("visibilitychange", handleVisibility);
-    };
-  }, [draftReady, syncNow, userId]);
-
-  useEffect(() => {
-    if (!userId || !draftReady) return;
-    const supabase = getSupabaseClient();
-    if (!supabase) return;
-    let refreshTimer = 0;
-    const refresh = () => {
-      window.clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void syncNow(true), 200);
-    };
-    const channel = supabase
-      .channel(`inspection-sync:${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "inspection_records",
-          filter: `user_id=eq.${userId}`,
-        },
-        refresh,
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "inspection_drafts",
-          filter: `user_id=eq.${userId}`,
-        },
-        refresh,
-      )
-      .subscribe();
-
-    return () => {
-      window.clearTimeout(refreshTimer);
-      void supabase.removeChannel(channel);
-    };
-  }, [draftReady, syncNow, userId]);
+  useInspectionSyncEvents({ userId, draftReady, syncNow });
 
   const applyDraftChange = useCallback(
     (
@@ -410,8 +353,7 @@ export function useInspectionController(userId?: string) {
     item: string,
   ) => {
     clearKeys(getBeltItemKeys(id, ends, item));
-    const itemTitle =
-      id === "SZ101" && item === "电机 / 减速机" ? "电机" : item;
+    const itemTitle = getBeltItemTitle(id, item);
     toast.success(`已清空${id} ${itemTitle}`);
   };
 

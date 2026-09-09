@@ -1,8 +1,8 @@
 import type {
   InspectionImportPreview,
   InspectionRecord,
-  InspectionValues,
 } from "../model/types";
+import { isInspectionRecord } from "../model/validation";
 import {
   getInspectionRecordCreatedAt,
   getInspectionRecordTimestamp,
@@ -20,30 +20,6 @@ type InspectionBackup = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isInspectionValues(value: unknown): value is InspectionValues {
-  return (
-    isRecord(value) &&
-    Object.values(value).every((fieldValue) => typeof fieldValue === "string")
-  );
-}
-
-export function isInspectionRecord(value: unknown): value is InspectionRecord {
-  if (!isRecord(value)) return false;
-
-  return (
-    typeof value.id === "string" &&
-    value.id.trim().length > 0 &&
-    typeof value.date === "string" &&
-    value.date.trim().length > 0 &&
-    typeof value.time === "string" &&
-    value.time.trim().length > 0 &&
-    (!("createdAt" in value) ||
-      (typeof value.createdAt === "string" &&
-        !Number.isNaN(Date.parse(value.createdAt)))) &&
-    isInspectionValues(value.values)
-  );
 }
 
 export function normalizeInspectionRecord(

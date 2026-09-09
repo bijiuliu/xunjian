@@ -1,4 +1,4 @@
-export type AuthOperation =
+type AuthOperation =
   | "sign-in"
   | "sign-up"
   | "forgot-password"

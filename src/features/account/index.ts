@@ -1,4 +1,3 @@
 export { AccountDialog } from "./components/account-dialog";
-export { AvatarVisual } from "./components/account-menu";
+export { AvatarVisual } from "./components/avatar-visual";
 export { useUserPreferences } from "./hooks/use-user-preferences";
-export { DEFAULT_NAVIGATION_ORDER } from "./model/user-preferences";

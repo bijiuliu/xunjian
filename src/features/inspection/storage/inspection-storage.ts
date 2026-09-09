@@ -9,14 +9,14 @@ import { normalizeInspectionRecord } from "./inspection-backup";
 
 export const RECORDS_STORAGE_KEY = "night-inspection";
 export const DRAFT_STORAGE_KEY = "night-inspection-draft";
-export const LAST_BACKUP_STORAGE_KEY = "night-inspection-last-backup";
-export const IMPORT_UNDO_STORAGE_KEY = "night-inspection-import-undo";
-export const STORAGE_OWNER_KEY = "night-inspection-owner";
+const LAST_BACKUP_STORAGE_KEY = "night-inspection-last-backup";
+const IMPORT_UNDO_STORAGE_KEY = "night-inspection-import-undo";
+const STORAGE_OWNER_KEY = "night-inspection-owner";
 
 const ACCOUNT_CACHE_PREFIX = "night-inspection-account:";
 const IMPORT_UNDO_TTL_MS = 5 * 60 * 1000;
 
-export type ImportUndoSnapshot = {
+type ImportUndoSnapshot = {
   records: InspectionRecord[];
   expiresAt: number;
 };
@@ -28,6 +28,18 @@ export type StoredInspectionState = {
   draftUpdatedAt: string | null;
   hasDraft: boolean;
 };
+
+/** Preserve the distinction between a missing draft and a saved empty draft. */
+export function getStoredInspectionDraft(
+  state: StoredInspectionState,
+): InspectionDraft | null {
+  if (!state.hasDraft) return null;
+  return {
+    values: state.values,
+    beltTab: state.beltTab,
+    ...(state.draftUpdatedAt ? { updatedAt: state.draftUpdatedAt } : {}),
+  };
+}
 
 export function loadInspectionState(): StoredInspectionState {
   let records: InspectionRecord[] = [];
@@ -167,14 +179,9 @@ export function prepareStorageForUser(userId: string): StoredInspectionState {
   localStorage.removeItem(IMPORT_UNDO_STORAGE_KEY);
   localStorage.removeItem(LAST_BACKUP_STORAGE_KEY);
   saveInspectionRecords(nextState.records);
-  if (nextState.hasDraft) {
-    saveInspectionDraft({
-      values: nextState.values,
-      beltTab: nextState.beltTab,
-      ...(nextState.draftUpdatedAt
-        ? { updatedAt: nextState.draftUpdatedAt }
-        : {}),
-    });
+  const nextDraft = getStoredInspectionDraft(nextState);
+  if (nextDraft) {
+    saveInspectionDraft(nextDraft);
   } else {
     clearInspectionDraft();
   }

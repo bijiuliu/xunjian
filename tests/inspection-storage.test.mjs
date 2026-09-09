@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   DRAFT_STORAGE_KEY,
   RECORDS_STORAGE_KEY,
+  getStoredInspectionDraft,
   loadInspectionState,
   prepareStorageForUser,
 } from "../src/features/inspection/storage/inspection-storage.ts";
@@ -41,6 +42,17 @@ test("legacy values-only drafts remain readable", () => {
     draftUpdatedAt: null,
     hasDraft: true,
   });
+});
+
+test("stored draft conversion retains absence, legacy values and empty versions", () => {
+  assert.equal(getStoredInspectionDraft(loadInspectionState()), null);
+  localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ legacy: "8" }));
+  assert.deepEqual(getStoredInspectionDraft(loadInspectionState()), {
+    values: { legacy: "8" }, beltTab: "SZ101",
+  });
+  const empty = { values: {}, beltTab: "SZ201", updatedAt: "2026-09-09T00:00:00.000Z" };
+  localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(empty));
+  assert.deepEqual(getStoredInspectionDraft(loadInspectionState()), empty);
 });
 
 test("an empty versioned draft is distinct from no draft", () => {

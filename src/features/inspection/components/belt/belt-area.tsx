@@ -61,9 +61,7 @@ export function BeltArea({
                         aria-hidden="true"
                       />
                     )}
-                    {belt.id === "SZ201-N" && item === "液力耦合器"
-                      ? "液力耦合器"
-                      : getBeltItemTitle(belt.id, item)}
+                    {getBeltItemTitle(belt.id, item)}
                   </b>
                   <Button
                     type="button"

@@ -7,6 +7,7 @@
 ```text
 src/
 ├─ app/                         # Next.js 路由、布局和全局设计令牌
+├─ assets/                      # 页面内静态品牌资源
 ├─ components/ui/               # 可跨业务复用的基础 UI 组件
 ├─ features/inspection/
 │  ├─ components/               # 巡检界面，按泵区、皮带、历史和弹窗拆分
@@ -19,6 +20,8 @@ src/
 ├─ features/auth/               # Supabase 登录、注册、邮箱验证、密码恢复与会话撤销
 ├─ lib/supabase/                # 浏览器 Supabase 客户端
 └─ lib/                         # 与具体业务无关的通用工具
+public/icons/                   # manifest 引用的 PWA 普通与 Maskable 图标
+design/brand/                   # 品牌母版、导出规范与历史设计归档
 ```
 
 ## 依赖方向
@@ -38,6 +41,7 @@ components → hooks → model
 - `features/account` 独立管理用户偏好缓存、私有头像和账号面板，不把账号设置混入巡检控制器。
 - `components/ui` 不得依赖 `features`，避免基础组件与业务反向耦合。
 - `features/inspection/index.ts` 是业务模块对外公开入口；模块内部直接引用具体文件。
+- `design/brand/night-inspection-master.svg` 是品牌图形的唯一设计母版；`src/app`、`src/assets` 和 `public/icons` 中的图标均为面向具体运行场景的生产派生资源。
 
 ## 数据兼容约束
 
@@ -112,6 +116,7 @@ type InspectionRecord = {
 6. 草稿冲突规则修改在 `model/draft-reconciliation.ts` 完成，并同步扩展 `tests/draft-version.test.mjs`。
 7. 历史操作队列修改在 `sync/inspection-sync-queue.ts` 完成，并同步扩展 `tests/inspection-sync-queue.test.mjs`；网络读写留在 `sync/inspection-cloud-sync.ts`，纯数据库映射和行校验在 `sync/inspection-cloud-mapping.ts`。
 8. 每次修改后运行 `npm run lint`、`npx tsc --noEmit`、`npm test` 和生产构建。
+9. 品牌图形只修改 `design/brand/night-inspection-master.svg`，随后按 `design/brand/README.md` 同步导出 favicon、Apple、登录页、PWA 普通及 Maskable 资源；不得直接把历史归档文件接入运行时。
 
 ## 职责扩展点
 

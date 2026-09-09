@@ -50,3 +50,15 @@
 本次按 Supabase 技能核对了官方变更摘要和 [Realtime 订阅文档](https://supabase.com/docs/reference/javascript/subscribe)，仅提取原有代码，没有更换 API 或权限策略。
 
 验证边界：没有执行真实邮箱登录/注册/改密、双设备联机冲突、生产 Realtime 或 session revoke 端到端验收，也没有做手机拖动/动画实机验收；不声称这些场景已由上述本地检查完全证明。改动保留现有时序和数据保护；真实联机验收仍是发布前的检查项。本次未提交、推送或部署。
+
+## 品牌图标迁移补充（2026-09-09）
+
+本节记录代码治理审计之后完成的独立品牌资源迁移。上文“PWA 图标和部署暂不修改”“所有 PWA 图标保留”描述的是当时那次代码清理的边界，不代表后续品牌资源永久冻结。
+
+- 新增 `design/brand/night-inspection-master.svg` 作为唯一设计母版，并在 `design/brand/README.md` 固定色值、几何、导出矩阵和验收规则。
+- Next.js 应用图标由 `src/app/icon.png` 切换为白底 `src/app/icon.svg`；同步更新 `apple-icon.png` 和包含 16/32/48/64 尺寸的 favicon。
+- 登录页用透明 `src/assets/night-inspection-logo.svg` 替换原盾牌品牌占位；重置密码的功能性钥匙图标继续使用 Lucide。
+- manifest 改用带版本文件名的 192/512 普通图标，并新增独立的 512 Maskable 图标。Maskable 全部品牌像素的最大中心半径为 184.15px，小于 512px 画布要求的 204.8px 安全半径。
+- 项目原有黑底眼形旧图标已从当前工作区删除；本次新品牌图形的过程版本保存在 `design/brand/archive/`，不参与运行时构建。旧图标仍存在于 Git 历史，本次没有改写仓库历史。
+- 迁移未增加依赖，未修改 localStorage、Supabase、巡检规则、Safe Area、Next 配置或部署工作流。
+- 验证结果：lint、TypeScript、40 项测试和 Next.js 16.3.2 生产静态构建全部通过；导出目录包含新版 manifest、favicon、icon、apple-icon 和三个 PWA 图标。

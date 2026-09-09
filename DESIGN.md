@@ -11,6 +11,17 @@
 - shadcn/ui New York 是组件结构基线，视觉继续遵循本项目的 iOS 风格，而非照搬默认样式。
 - Material Design 3 仅用于交互准则：44px 级触控目标、明确的操作优先级、适当的 Dialog / Bottom Sheet 与表单反馈；不使用其视觉主题。
 
+## 品牌标志与应用图标
+
+品牌图形的唯一设计母版为 `design/brand/night-inspection-master.svg`，完整生产资源和导出规则见 `design/brand/README.md`。
+
+- 深蓝固定为 `#0f1f37`；青色渐变固定为 `#3deb9f` → `#18d8b9` → `#08c1cd` → `#00a0e3`。这些是品牌资产色，不扩展为界面颜色 token，也不得在业务组件中复制为新的硬编码配色。
+- 图形使用无描边 Bézier 路径；相邻斜边保持平行，白色通道保持均匀。禁止使用 JPEG 轮廓、预制圆角、图形阴影、发光和模糊边缘。
+- 登录页使用透明 SVG，标准显示尺寸为 56px，不添加蓝色圆角底。图标与“夜班巡检”标题同时出现时使用空 `alt`，避免辅助技术重复朗读。
+- 浏览器和 Apple 图标使用不透明纯白方形背景，不预先裁切系统圆角。favicon 使用专用视觉裁切，提高 16px 下的主体占比。
+- PWA 普通图标使用 `purpose: any`；Maskable 图标单独使用 `purpose: maskable`，并确保全部重要图形位于中央 40% 半径安全圆内。
+- 修改品牌图形后必须在 16、32、56、180、192 和 512 像素下检查识别度、抗锯齿、透明边缘、裁切和颜色一致性。
+
 ## Tokens
 
 唯一 token 源在 `src/app/globals.css`。新增界面优先使用语义化 Tailwind 类，例如 `bg-primary`、`text-muted-foreground`、`rounded-card`、`shadow-card`。

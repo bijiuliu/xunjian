@@ -1,19 +1,20 @@
 # 夜班巡检项目交接文档
 
-> 更新日期：2026-09-06
+> 更新日期：2026-09-09
 > 用途：让新的 Codex 对话快速接手当前代码，避免重新梳理已确认的纸表规则、回退已撤销的交互，或破坏已有浏览器数据。
 
 ## 1. 当前状态（60 秒接手）
 
 - 项目目录：仓库根目录（不同开发环境路径可以不同）
 - 本地开发地址：<http://localhost:3000/>（需要时在仓库根目录执行 `npm run dev`）
-- GitHub 仓库：<https://github.com/bijiuliu/xunjian>
-- GitHub Pages 目标地址：<https://bijiuliu.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
+- GitHub 仓库：<https://github.com/ybxunjian/xunjian>
+- GitHub Pages 目标地址：<https://ybxunjian.github.io/xunjian/>；`main` 分支推送会触发 `.github/workflows/deploy.yml` 自动构建与发布。发布完成后，应以 Actions 成功状态和该地址实际页面为准。
 - 技术栈：Next.js 16.3.2 App Router、React 19、TypeScript、Tailwind CSS 4、本地 shadcn/ui 风格组件、Framer Motion、Lucide、Sonner、localStorage、Supabase Auth/Postgres、PWA manifest。
 - 产品形态：仅手机端的 App 风格夜班巡检工具；支持邮箱自行注册、账号登录、邮箱验证、忘记密码、账号头像、本地优先缓存和跨设备云同步。
 - 当前密码安全策略：账号内改密和邮件找回重设密码后保留当前设备登录，撤销其他设备会话；在线设备通过 Realtime 及时退出，离线或后台设备在恢复联网或回到前台时退出。
 - 主导航默认顺序：`8#冲渣` → `皮带` → `9#冲渣` → `历史记录`；用户可在账号面板拖动排序，第一项为启动页面并跨设备同步；一级导航和皮带子导航会吸顶。
 - 设计规范：`DESIGN.md`；唯一的颜色、圆角、阴影和间距 token 在 `src/app/globals.css`。
+- 品牌规范：`design/brand/README.md`；唯一品牌图形母版为 `design/brand/night-inspection-master.svg`。
 - 架构规范：`ARCHITECTURE.md`。
 - 当前同步功能基线：PR #1 的合并提交 `cbb008c`（`提高离线与多设备同步可靠性`），GitHub Pages 构建与部署均已成功；后续纯文档提交不改变该运行时基线。
 
@@ -33,7 +34,10 @@ src/features/inspection/
    └─ inspection-sync-queue.ts           # 按账号持久化的历史操作队列
 src/features/auth/                       # 登录、注册、邮箱验证、密码恢复与会话状态
 src/features/account/                    # 账号面板、私有头像与导航偏好同步
+src/assets/                              # 登录页透明品牌标志
 src/lib/supabase/client.ts               # 浏览器 Supabase 客户端
+public/icons/                            # PWA 普通与 Maskable 图标
+design/brand/                            # 品牌母版、规范和历史设计归档
 supabase/migrations/                     # 数据表与 RLS 策略
 tests/draft-version.test.mjs             # 草稿版本与跨设备冲突规则测试
 tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加保护测试
@@ -47,16 +51,18 @@ tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加�
 2. 本文档
 3. `ARCHITECTURE.md`
 4. `README.md`
-5. `src/app/page.tsx`
-6. `src/features/inspection/components/night-inspection-app.tsx`
-7. `src/features/inspection/hooks/use-inspection-controller.ts`
-8. `src/features/inspection/hooks/use-inspection-history.ts`
-9. `src/features/inspection/hooks/use-inspection-backup.ts`
-10. `src/features/inspection/model/draft-reconciliation.ts`
-11. `src/features/inspection/sync/inspection-sync-queue.ts`
-12. `src/features/inspection/sync/inspection-cloud-sync.ts`
-13. `supabase/migrations/20260906170915_reliable_inspection_sync.sql`
-14. `next.config.ts` 与 `.github/workflows/deploy.yml`
+5. `DESIGN.md`
+6. `design/brand/README.md`
+7. `src/app/page.tsx`
+8. `src/features/inspection/components/night-inspection-app.tsx`
+9. `src/features/inspection/hooks/use-inspection-controller.ts`
+10. `src/features/inspection/hooks/use-inspection-history.ts`
+11. `src/features/inspection/hooks/use-inspection-backup.ts`
+12. `src/features/inspection/model/draft-reconciliation.ts`
+13. `src/features/inspection/sync/inspection-sync-queue.ts`
+14. `src/features/inspection/sync/inspection-cloud-sync.ts`
+15. `supabase/migrations/20260906170915_reliable_inspection_sync.sql`
+16. `next.config.ts` 与 `.github/workflows/deploy.yml`
 
 修改任何 Next.js 代码前，必须先阅读本机 `node_modules/next/dist/docs/` 下对应的 Next.js 16 文档，并遵循 `AGENTS.md`。
 
@@ -144,6 +150,7 @@ tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加�
 - 历史列表、详情汇总、批量管理、二次确认、详情删除。
 - 汇总顺序：皮带区域 → 8#冲渣 → 9#冲渣。
 - PWA manifest、iPhone Safe Area、GitHub Pages 静态导出。
+- 品牌图标已统一为新矢量图形：登录页使用透明 SVG，浏览器和 Apple 图标使用白底版本；PWA 普通图标与 Maskable 图标分离，旧黑底眼形图标已从当前工作区删除。
 - 登录与注册共用同一套移动端表单布局；密码输入支持显隐，注册和重置密码均要求二次确认。
 - 注册后提供邮箱验证状态与 60 秒重发冷却；已注册账号会在邮箱输入框抖动后显示行内提示和忘记密码入口，不使用易被误解为注册成功的完成页。
 - 登录未验证邮箱时可直接重发验证邮件；认证错误优先按 Supabase `error.code` 映射，不依赖英文错误文案。
@@ -167,6 +174,9 @@ tests/inspection-sync-queue.test.mjs     # 队列迁移、确认和并发追加�
 - 不要恢复左滑删除，除非用户明确提出。
 
 ### 视觉与触控约束
+
+- 品牌图形只修改 `design/brand/night-inspection-master.svg`，并按 `design/brand/README.md` 同步导出生产资源。不要把 `design/brand/archive/` 中的历史版本接入页面或 manifest。
+- 登录页品牌图标是装饰图片，紧邻文字标题时保持空 `alt`；功能图标继续使用 Lucide 并提供对应语义。
 
 - 只做手机端：浅灰页面、白色圆角卡片、蓝色主要操作、适度阴影。
 - 首页头部保持深色渐变：`from-slate-950 via-slate-900 to-blue-950`。
@@ -239,6 +249,8 @@ components → hooks → model
 ```
 
 - `src/app` 只放路由、布局和全局样式。
+- `src/app/icon.svg`、`src/app/apple-icon.png` 和 `src/app/favicon.ico` 是 Next.js 元数据资源；`src/assets/night-inspection-logo.svg` 仅用于页面内品牌展示。
+- manifest 只引用 `public/icons/night-inspection-192-v2.png`、`night-inspection-512-v2.png` 和独立的 `night-inspection-maskable-512-v2.png`。Maskable 图标的重要内容必须处于中央 40% 半径安全圆内。
 - `model` 保持纯 TypeScript，不依赖 React、DOM、Framer Motion 或浏览器 API。
 - `components/ui` 不能依赖业务模块。
 - 巡检专属组件留在 `src/features/inspection/components`，通用控件才可进入 `src/components/ui`。
@@ -286,7 +298,7 @@ $env:PAGES_BASE_PATH='/xunjian'
 npm run build
 ```
 
-截至 2026-09-06，同步功能基线 `cbb008c` 已通过 GitHub Pages 的构建与部署；当前测试集包含 35 项头像恢复、草稿版本、字段规则、保存校验、备份兼容、存储兼容、历史同步队列和导航偏好测试。
+截至 2026-09-09，同步功能基线 `cbb008c` 已通过 GitHub Pages 的构建与部署；当前测试集包含 40 项头像恢复、草稿版本、字段规则、保存校验、备份兼容、存储兼容、历史同步队列、云映射和导航偏好测试。
 
 涉及交互时至少手工检查：
 
@@ -310,19 +322,21 @@ npm run build
 ## 9. 新对话直接粘贴
 
 ```text
-继续开发夜班巡检仓库 `https://github.com/bijiuliu/xunjian`。
+继续开发夜班巡检仓库 `https://github.com/ybxunjian/xunjian`。
 
 先完整阅读：
 1. AGENTS.md
 2. PROJECT_HANDOFF.md
 3. ARCHITECTURE.md
 4. README.md
-5. src/app/page.tsx
-6. src/features/inspection/components/night-inspection-app.tsx
-7. src/features/inspection/hooks/use-inspection-controller.ts
-8. src/features/inspection/sync/inspection-sync-queue.ts
-9. src/features/inspection/sync/inspection-cloud-sync.ts
-10. supabase/migrations/20260906170915_reliable_inspection_sync.sql
+5. DESIGN.md
+6. design/brand/README.md
+7. src/app/page.tsx
+8. src/features/inspection/components/night-inspection-app.tsx
+9. src/features/inspection/hooks/use-inspection-controller.ts
+10. src/features/inspection/sync/inspection-sync-queue.ts
+11. src/features/inspection/sync/inspection-cloud-sync.ts
+12. supabase/migrations/20260906170915_reliable_inspection_sync.sql
 
 不要重新设计、不要回退已完成内容。业务规则、样式和数据兼容以当前源码为最终依据；先说明当前状态，再执行我的新需求。
 ```

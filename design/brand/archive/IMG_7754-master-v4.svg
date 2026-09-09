@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="4096" viewBox="0 0 4096 4096">
+  <defs>
+    <filter id="tileShadow" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="20" stdDeviation="92" flood-color="#c9dcf3" flood-opacity="0.72"/>
+    </filter>
+    <linearGradient id="aqua" x1="0" y1="0" x2="0.12" y2="1">
+      <stop offset="0" stop-color="#3deb9f"/>
+      <stop offset="0.45" stop-color="#18d8b9"/>
+      <stop offset="0.72" stop-color="#08c1cd"/>
+      <stop offset="1" stop-color="#00a0e3"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="4096" height="4096" fill="#ffffff"/>
+  <rect x="430" y="438" width="3236" height="3145" rx="710" fill="#ffffff" filter="url(#tileShadow)"/>
+  <rect x="430" y="438" width="3236" height="3145" rx="710" fill="#ffffff"/>
+
+  <!-- All logo contours are true Bezier paths: no raster tracing or edge stroke. -->
+  <path fill="#0f1f37" d="
+    M 1042 1223
+    L 1300 1223
+    C 1364 1223 1412 1249 1460 1301
+    L 2847 2832
+    C 2896 2886 2914 2939 2882 2977
+    C 2862 3002 2830 3011 2784 3011
+    L 2369 3011
+    C 2277 3011 2202 2975 2141 2907
+    L 944 1399
+    C 891 1332 901 1272 952 1239
+    C 977 1223 1006 1223 1042 1223
+    Z"/>
+
+  <path fill="#0f1f37" d="
+    M 1402 2222
+    C 1441 2183 1481 2185 1521 2224
+    L 1687 2393
+    C 1724 2431 1725 2470 1690 2511
+    L 1459 2768
+    C 1415 2818 1360 2843 1294 2843
+    L 1017 2843
+    C 952 2843 916 2818 905 2775
+    C 895 2736 910 2695 950 2652
+    L 1402 2222
+    Z"/>
+
+  <path fill="url(#aqua)" d="
+    M 2588 1034
+    L 3067 1034
+    C 3128 1034 3158 1064 3158 1120
+    C 3158 1152 3141 1184 3107 1219
+    L 2307 2011
+    C 2258 2060 2209 2060 2162 2012
+    L 1990 1807
+    C 1950 1759 1950 1713 1992 1665
+    L 2502 1110
+    C 2528 1081 2557 1055 2588 1034
+    Z"/>
+
+  <path fill="url(#aqua)" d="
+    M 3052 1507
+    C 3101 1462 3151 1481 3151 1544
+    L 3151 2397
+    C 3151 2580 3110 2742 2965 2876
+    L 2599 2472
+    C 2689 2472 2736 2422 2736 2317
+    L 2736 1857
+    C 2736 1802 2754 1764 2795 1726
+    L 3052 1507
+    Z"/>
+</svg>

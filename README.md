@@ -15,6 +15,7 @@
 
 ```text
 src/app/                         # App Router 入口、布局和全局样式
+src/assets/                      # 页面内使用的静态品牌资源
 src/components/ui/               # 本地基础 UI 组件
 src/features/inspection/         # 巡检视图、流程、规则、存储和云同步
 src/features/inspection/sync/    # 云端同步、持久化离线队列和冲突保护
@@ -22,10 +23,21 @@ src/features/auth/               # 登录、注册、验证、密码恢复和会
 src/features/account/            # 账号面板、头像和导航偏好
 src/lib/supabase/                # 浏览器 Supabase 客户端
 supabase/migrations/             # 数据表、RPC、Storage、RLS 和 Realtime 迁移
+public/icons/                    # PWA 普通与 Maskable 图标
+design/brand/                    # 品牌矢量母版、规范与历史设计归档
 tests/                           # 纯业务规则测试
 ```
 
-更详细的依赖关系和数据流见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)，当前业务规则与交接基线见 [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md)。
+更详细的依赖关系和数据流见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)，当前业务规则与交接基线见 [`PROJECT_HANDOFF.md`](./PROJECT_HANDOFF.md)，界面规范见 [`DESIGN.md`](./DESIGN.md)，品牌图标的母版、色值、导出矩阵与验收规则见 [`design/brand/README.md`](./design/brand/README.md)。
+
+## 品牌图标与 PWA 资源
+
+- 唯一设计母版为 `design/brand/night-inspection-master.svg`，使用透明背景、sRGB 色值和无描边 Bézier 路径。
+- 登录页使用 `src/assets/night-inspection-logo.svg`；该图片紧邻应用标题，作为装饰图片使用空 `alt`。
+- Next.js 元数据图标为白底 `src/app/icon.svg`；Apple Web Clip 与 favicon 分别使用 `src/app/apple-icon.png` 和 `src/app/favicon.ico`。
+- PWA 普通图标与 Maskable 图标分开声明。Maskable 图标使用不透明背景，全部品牌图形必须位于画布中心、半径为边长 40% 的安全圆内。
+- 生产图标只使用 SVG、PNG 或 ICO，不使用 JPEG；修改母版后必须同步生成并检查全部尺寸。
+- `design/brand/archive/` 仅保存本次品牌设计的历史版本，不参与运行时构建。项目原来的黑底眼形旧图标已从当前工作区删除。
 
 ## 本地运行
 
@@ -52,7 +64,7 @@ npm run build
 
 ## GitHub Pages 部署
 
-站点地址：[https://bijiuliu.github.io/xunjian/](https://bijiuliu.github.io/xunjian/)。
+站点地址：[https://ybxunjian.github.io/xunjian/](https://ybxunjian.github.io/xunjian/)。
 
 推送到 `main` 分支后，GitHub Actions 会自动执行 `npm ci`、构建静态导出并发布到 GitHub Pages。该构建会自动注入 `/xunjian` 基础路径；本地校验 Pages 构建时使用：
 
@@ -92,6 +104,6 @@ npm run build
 
 登录与注册使用统一的移动端表单布局，密码输入支持显隐，注册和重置密码都需要二次确认。注册后可重发验证邮件；登录未验证邮箱时也会提供重发入口。
 
-登录页支持“忘记密码”：用户提交邮箱后，Supabase 会发送重置邮件；打开邮件链接会回到应用并显示设置新密码界面。要让生产环境的验证和重置链接正确返回 GitHub Pages，请在 Authentication → URL Configuration 中将 Site URL 设为 `https://bijiuliu.github.io/xunjian/`，并把该完整地址加入 Redirect URLs。本地调试时再额外加入 `http://localhost:3000/`。
+登录页支持“忘记密码”：用户提交邮箱后，Supabase 会发送重置邮件；打开邮件链接会回到应用并显示设置新密码界面。要让生产环境的验证和重置链接正确返回 GitHub Pages，请在 Authentication → URL Configuration 中将 Site URL 设为 `https://ybxunjian.github.io/xunjian/`，并把该完整地址加入 Redirect URLs。本地调试时再额外加入 `http://localhost:3000/`。
 
 账号内修改密码和邮件找回重设密码后，应用保留当前设备登录并撤销其他设备会话。在线设备通过 `user_preferences` 的 Realtime 变更及时退出；离线或后台设备会在恢复联网或页面回到前台时检查撤销标记并退出。

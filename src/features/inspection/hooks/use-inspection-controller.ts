@@ -314,18 +314,48 @@ export function useInspectionController(userId?: string) {
   };
 
   const clearKeys = (keys: string[]) => {
+    const previousValues: Array<{
+      key: string;
+      existed: boolean;
+      value: string;
+    }> = [];
+
     applyDraftChange((current) => ({
-      values: {
-        ...current.values,
-        ...Object.fromEntries(keys.map((key) => [key, ""])),
-      },
+      values: Object.fromEntries(
+        Object.entries(current.values).concat(
+          keys.map((key) => {
+            previousValues.push({
+              key,
+              existed: Object.hasOwn(current.values, key),
+              value: current.values[key] ?? "",
+            });
+            return [key, ""];
+          }),
+        ),
+      ),
       beltTab: current.beltTab,
     }));
+
+    return () => {
+      applyDraftChange((current) => {
+        const restoredValues = { ...current.values };
+        previousValues.forEach(({ key, existed, value }) => {
+          if (existed) restoredValues[key] = value;
+          else delete restoredValues[key];
+        });
+        return { values: restoredValues, beltTab: current.beltTab };
+      });
+    };
   };
 
   const clearPump = (area: PumpAreaId, group: string, index: number) => {
-    clearKeys(getPumpCardKeys(area, group, index));
-    toast.success(`已清空${area === "slag8" ? "8#" : "9#"}${group}`);
+    const undoClear = clearKeys(getPumpCardKeys(area, group, index));
+    toast.success(`已清空${area === "slag8" ? "8#" : "9#"}${group}`, {
+      action: {
+        label: "撤销",
+        onClick: undoClear,
+      },
+    });
   };
 
   const choosePump = (
@@ -352,9 +382,14 @@ export function useInspectionController(userId?: string) {
     ends: readonly string[],
     item: string,
   ) => {
-    clearKeys(getBeltItemKeys(id, ends, item));
+    const undoClear = clearKeys(getBeltItemKeys(id, ends, item));
     const itemTitle = getBeltItemTitle(id, item);
-    toast.success(`已清空${id} ${itemTitle}`);
+    toast.success(`已清空${id} ${itemTitle}`, {
+      action: {
+        label: "撤销",
+        onClick: undoClear,
+      },
+    });
   };
 
   const selectTab = (nextTab: InspectionTab) => {

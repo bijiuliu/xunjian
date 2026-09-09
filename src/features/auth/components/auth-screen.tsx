@@ -1,10 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, CircleCheck, KeyRound } from "lucide-react";
 import { toast } from "sonner";
-import authLogo from "@/assets/night-inspection-logo.svg";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -23,6 +21,42 @@ import type { AuthMode, AuthScreenProps } from "./auth-screen-types";
 import { AccountNotice, StatusPanel } from "./auth-status-panels";
 
 type AuthNotice = "confirmation-sent" | null;
+
+function AuthLogo() {
+  return (
+    <svg
+      viewBox="800 850 2400 2400"
+      aria-hidden="true"
+      focusable="false"
+      className="mx-auto mb-4 size-14"
+    >
+      <defs>
+        <linearGradient id="auth-logo-aqua" x1="0" y1="0" x2="0.12" y2="1">
+          <stop offset="0" stopColor="#3deb9f" />
+          <stop offset="0.45" stopColor="#18d8b9" />
+          <stop offset="0.72" stopColor="#08c1cd" />
+          <stop offset="1" stopColor="#00a0e3" />
+        </linearGradient>
+      </defs>
+      <path
+        fill="#0f1f37"
+        d="M1042 1223H1300C1364 1223 1412 1249 1460 1301L2847 2832C2896 2886 2914 2939 2882 2977C2862 3002 2830 3011 2784 3011H2369C2277 3011 2202 2975 2141 2907L944 1399C891 1332 901 1272 952 1239C977 1223 1006 1223 1042 1223Z"
+      />
+      <path
+        fill="#0f1f37"
+        d="M1402 2222C1441 2183 1481 2185 1521 2224L1687 2393C1724 2431 1725 2470 1690 2511L1459 2768C1415 2818 1360 2843 1294 2843H1017C952 2843 916 2818 905 2775C895 2736 910 2695 950 2652L1402 2222Z"
+      />
+      <path
+        fill="url(#auth-logo-aqua)"
+        d="M2588 1034H3067C3128 1034 3158 1064 3158 1120C3158 1152 3141 1184 3107 1219L2307 2011C2258 2060 2209 2060 2162 2012L1990 1807C1950 1759 1950 1713 1992 1665L2502 1110C2528 1081 2557 1055 2588 1034Z"
+      />
+      <path
+        fill="url(#auth-logo-aqua)"
+        d="M3052 1507C3101 1462 3151 1481 3151 1544V2397C3151 2580 3110 2742 2965 2876L2599 2472C2689 2472 2736 2422 2736 2317V1857C2736 1802 2754 1764 2795 1726L3052 1507Z"
+      />
+    </svg>
+  );
+}
 
 export function AuthScreen({
   passwordRecovery = false,
@@ -179,12 +213,7 @@ export function AuthScreen({
               <KeyRound className="size-7" />
             </div>
           ) : (
-            <Image
-              src={authLogo}
-              alt=""
-              className="mx-auto mb-4 size-14"
-              priority
-            />
+            <AuthLogo />
           )}
           <h1 className="text-3xl font-black tracking-tight">
             {mode === "reset-password" ? "设置新密码" : "夜班巡检"}

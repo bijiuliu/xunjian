@@ -43,8 +43,8 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
-      - name: Build with Next.js
-        run: npm run build
+      - name: Run quality gate and build
+        run: npm run check
         env:
           PAGES_BASE_PATH: ${{ steps.setup_pages.outputs.base_path }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}

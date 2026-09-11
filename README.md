@@ -55,12 +55,11 @@ npm run build
 ## 质量检查
 
 ```powershell
-npm run lint
-npx tsc --noEmit
-npm test
 $env:PAGES_BASE_PATH='/xunjian'
-npm run build
+npm run check
 ```
+
+`npm run check` 会依次执行 ESLint、独立 TypeScript 类型检查、业务测试和生产构建；任一步失败都会以非零状态退出。Pull Request 会自动运行同一门禁，`main` 分支的部署也只有在门禁全部通过后才会上传到 GitHub Pages。
 
 ## GitHub Pages 部署
 
